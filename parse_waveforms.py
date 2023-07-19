@@ -5,6 +5,7 @@ import numpy
 import pandas
 from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://github.com/SengerM/huge_dataframe
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
+import plotly.graph_objects as go
 
 def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
 	"""Parse a waveform and extract features like the amplitude, noise,
@@ -32,6 +33,46 @@ def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
 			time_at_this_pp = float('NaN')
 		parsed[f't_{pp} ({horizontal_unit})'] = time_at_this_pp
 	return parsed
+
+def plot_waveform(waveform:PeakSignal):
+	fig = draw_in_plotly(waveform)
+	fig.update_layout(
+		xaxis_title = "Time (s)",
+		yaxis_title = "Amplitude (V)",
+	)
+	MARKERS = { # https://plotly.com/python/marker-style/#custom-marker-symbols
+		10: 'circle',
+		20: 'square',
+		30: 'diamond',
+		40: 'cross',
+		50: 'x',
+		60: 'star',
+		70: 'hexagram',
+		80: 'star-triangle-up',
+		90: 'star-triangle-down',
+	}
+	for pp in [10,20,30,40,50,60,70,80,90]:
+		try:
+			fig.add_trace(
+				go.Scatter(
+					x = [waveform.find_time_at_rising_edge(pp)],
+					y = [waveform(waveform.find_time_at_rising_edge(pp))],
+					mode = 'markers',
+					name = f'Time at {pp} %',
+					marker=dict(
+						color = 'rgba(0,0,0,.5)',
+						size = 11,
+						symbol = MARKERS[pp]+'-open-dot',
+						line = dict(
+							color = 'rgba(0,0,0,.5)',
+							width = 2,
+						)
+					),
+				)
+			)
+		except Exception as e:
+			raise e
+	return fig
 
 def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Path, sqlite_database_path:Path, number_of_events_for_which_to_produce_control_plots:int=0):
 	"""Parse the waveforms contained in a root file that was created
@@ -82,11 +123,15 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 				this_event_parsed_data.append(parsed)
 				
 				if produce_control_plots_for_this_event:
-					fig = draw_in_plotly(waveform)
+					fig = plot_waveform(waveform)
+					fig.update_layout(
+						title = f'n_event {n_event}, n_CAEN {n_CAEN} ({CAENs_names[n_CAEN]}), n_channel {n_channel}<br><sup>{bureaucrat.run_name}</sup>',
+					)
 					fig.write_html(
 						path_to_directory_in_which_to_save_the_control_plots/f'n_event_{n_event}_n_CAEN_{n_CAEN}_n_channel_{n_channel}.html',
 						include_plotlyjs = 'cdn',
 					)
+					
 				
 			this_event_parsed_data = pandas.DataFrame.from_records(this_event_parsed_data)
 			this_event_parsed_data.set_index(['n_event','n_CAEN','n_channel'], inplace=True)
