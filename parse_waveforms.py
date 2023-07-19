@@ -6,15 +6,17 @@ import pandas
 from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://github.com/SengerM/huge_dataframe
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 
-def parse_waveform(signal:PeakSignal):
+def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
+	"""Parse a waveform and extract features like the amplitude, noise,
+	rise time, etc."""
 	parsed = {
-		'Amplitude (V)': signal.amplitude,
-		'Noise (V)': signal.noise,
-		'Rise time (s)': signal.rise_time,
-		'Collected charge (V s)': signal.peak_integral,
-		'Time over noise (s)': signal.time_over_noise,
-		'Peak start time (s)': signal.peak_start_time,
-		'Whole signal integral (V s)': signal.integral_from_baseline,
+		f'Amplitude ({vertical_unit})': signal.amplitude,
+		f'Noise ({vertical_unit})': signal.noise,
+		f'Rise time ({horizontal_unit})': signal.rise_time,
+		f'Collected charge ({vertical_unit} {horizontal_unit})': signal.peak_integral,
+		f'Time over noise ({horizontal_unit})': signal.time_over_noise,
+		f'Peak start time ({horizontal_unit})': signal.peak_start_time,
+		f'Whole signal integral ({vertical_unit} {horizontal_unit})': signal.integral_from_baseline,
 		'SNR': signal.SNR
 	}
 	for threshold_percentage in [10,20,30,40,50,60,70,80,90]:
@@ -22,16 +24,18 @@ def parse_waveform(signal:PeakSignal):
 			time_over_threshold = signal.find_time_over_threshold(threshold_percentage)
 		except Exception:
 			time_over_threshold = float('NaN')
-		parsed[f'Time over {threshold_percentage}% (s)'] = time_over_threshold
+		parsed[f'Time over {threshold_percentage}% ({horizontal_unit})'] = time_over_threshold
 	for pp in [10,20,30,40,50,60,70,80,90]:
 		try:
 			time_at_this_pp = float(signal.find_time_at_rising_edge(pp))
 		except Exception:
 			time_at_this_pp = float('NaN')
-		parsed[f't_{pp} (s)'] = time_at_this_pp
+		parsed[f't_{pp} ({horizontal_unit})'] = time_at_this_pp
 	return parsed
 
 def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Path, sqlite_database_path:Path):
+	"""Parse the waveforms contained in a root file that was created
+	with `caenCliRootWF`."""
 	ifile = uproot.open(root_file_path)
 	
 	metadata = ifile['Metadata;1']
@@ -58,7 +62,9 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 					PeakSignal(
 						samples = -1*numpy.array(waveform_samples), # Multiply by -1 to make them positive.
 						time = time_array,
-					)
+					),
+					vertical_unit = 'V', # Volts.
+					horizontal_unit = 's', # Seconds.
 				)
 				parsed['n_channel'] = n_channel
 				parsed['n_CAEN'] = n_CAEN
@@ -69,6 +75,17 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 			parsed_data_dumper.append(this_event_parsed_data)
 
 def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
+	"""Parse the waveforms from a run and store the data in SQLite
+	databases.
+	
+	Arguments
+	---------
+	bureaucrat: RunBureaucrat
+		A bureaucrat pointing to the run for which to parse the waveforms.
+	force: bool, default False
+		If `False` and the task `raw_to_root` was already executed successfully
+		for the run being handled by `bureaucrat`, nothing is done.
+	"""
 	bureaucrat.check_these_tasks_were_run_successfully('raw_to_root')
 	
 	if force==False and bureaucrat.was_task_run_successfully('parse_waveforms'):
@@ -84,5 +101,18 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 			)
 
 if __name__=='__main__':
-	bureaucrat = RunBureaucrat(Path('/media/msenger/230302_red/June_test_beam/analysis/testing_deleteme'))
+	import argparse
+	
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--dir',
+		metavar = 'path', 
+		help = 'Path to the base measurement directory.',
+		required = True,
+		dest = 'directory',
+		type = str,
+	)
+	
+	args = parser.parse_args()
+	bureaucrat = RunBureaucrat(Path(args.directory))
+	
 	parse_waveforms(bureaucrat)

@@ -5,6 +5,16 @@ import subprocess
 PATH_TO_caenCliRootWF = Path.home()/'code/Jordis_docker/eudaq/bin/caenCliRootWF'
 
 def raw_to_root(bureaucrat:RunBureaucrat, force:bool=False):
+	"""Converts all the raw data files into Root files using the `caenCliRootWF`.
+	
+	Arguments
+	---------
+	bureaucrat: RunBureaucrat
+		A bureaucrat pointing to the run for which to convert the raw files.
+	force: bool, default False
+		If `False` and the task `raw_to_root` was already executed successfully
+		for the run being handled by `bureaucrat`, nothing is done.
+	"""
 	if force==False and bureaucrat.was_task_run_successfully('raw_to_root'):
 		return
 	
@@ -15,4 +25,18 @@ def raw_to_root(bureaucrat:RunBureaucrat, force:bool=False):
 			subprocess.run([str(PATH_TO_caenCliRootWF), '-i', str(path_to_raw_file), '-o', str(paht_to_directory_in_which_to_save_the_root_files/path_to_raw_file.name.replace('.raw','.root'))])
 	
 if __name__=='__main__':
-	raw_to_root(RunBureaucrat(Path('/media/msenger/230302_red/June_test_beam/analysis/testing_deleteme')))
+	import argparse
+	
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--dir',
+		metavar = 'path', 
+		help = 'Path to the base measurement directory.',
+		required = True,
+		dest = 'directory',
+		type = str,
+	)
+	
+	args = parser.parse_args()
+	bureaucrat = RunBureaucrat(Path(args.directory))
+	
+	raw_to_root(bureaucrat)
