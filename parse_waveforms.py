@@ -7,6 +7,7 @@ from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://githu
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 import plotly.graph_objects as go
 from raw_to_root import raw_to_root
+import logging
 
 def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
 	"""Parse a waveform and extract features like the amplitude, noise,
@@ -137,6 +138,9 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 			this_event_parsed_data = pandas.DataFrame.from_records(this_event_parsed_data)
 			this_event_parsed_data.set_index(['n_event','n_CAEN','n_channel'], inplace=True)
 			parsed_data_dumper.append(this_event_parsed_data)
+			
+			if n_event%99==0 and n_CAEN == len(CAENs_names)-1:
+				logging.info(f'Event {n_event} processed. ({n_event/number_of_events_to_be_processed*100:.0f} % completed for file {root_file_path.name})')
 
 def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 	"""Parse the waveforms from a run and store the data in SQLite
@@ -176,6 +180,14 @@ def parse_from_raw(bureaucrat:RunBureaucrat, force:bool=False):
 
 if __name__=='__main__':
 	import argparse
+	import sys
+	
+	logging.basicConfig(
+		stream = sys.stderr, 
+		level = logging.DEBUG,
+		format = '%(asctime)s|%(levelname)s|%(funcName)s|%(message)s',
+		datefmt = '%Y-%m-%d %H:%M:%S',
+	)
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
