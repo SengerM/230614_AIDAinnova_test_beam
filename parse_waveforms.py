@@ -6,6 +6,7 @@ import pandas
 from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://github.com/SengerM/huge_dataframe
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 import plotly.graph_objects as go
+from raw_to_root import raw_to_root
 
 def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
 	"""Parse a waveform and extract features like the amplitude, noise,
@@ -71,7 +72,7 @@ def plot_waveform(waveform:PeakSignal):
 				)
 			)
 		except Exception as e:
-			raise e
+			pass
 	return fig
 
 def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Path, sqlite_database_path:Path, number_of_events_for_which_to_produce_control_plots:int=0):
@@ -169,6 +170,10 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 			if NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS > 0:
 				sqlite_database_path.with_suffix('.control_plots').rename(sqlite_database_path.parent.parent/sqlite_database_path.with_suffix('.control_plots').name)
 
+def parse_from_raw(bureaucrat:RunBureaucrat, force:bool=False):
+	raw_to_root(bureaucrat=bureaucrat, force=force)
+	parse_waveforms(bureaucrat=bureaucrat, force=force)
+
 if __name__=='__main__':
 	import argparse
 	
@@ -191,4 +196,4 @@ if __name__=='__main__':
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	parse_waveforms(bureaucrat, force=args.force)
+	parse_from_raw(bureaucrat, force=args.force)
