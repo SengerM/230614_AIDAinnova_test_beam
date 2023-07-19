@@ -111,8 +111,15 @@ if __name__=='__main__':
 		dest = 'directory',
 		type = str,
 	)
+	parser.add_argument(
+		'--force',
+		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
+		required = False,
+		dest = 'force',
+		action = 'store_true'
+	)
 	
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	parse_waveforms(bureaucrat)
+	parse_waveforms(bureaucrat, force=args.force)
