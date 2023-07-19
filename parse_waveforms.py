@@ -33,17 +33,24 @@ def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
 		parsed[f't_{pp} ({horizontal_unit})'] = time_at_this_pp
 	return parsed
 
-def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Path, sqlite_database_path:Path):
+def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Path, sqlite_database_path:Path, number_of_events_for_which_to_produce_control_plots:int=0):
 	"""Parse the waveforms contained in a root file that was created
 	with `caenCliRootWF`."""
 	ifile = uproot.open(root_file_path)
 	
 	metadata = ifile['Metadata;1']
+	waveforms = ifile['Waveforms;1']
+	
 	sampling_frequency = metadata['sampling_frequency_MHz'].array()[0]*1e6
 	samples_per_waveform = metadata['samples_per_waveform'].array()[0]
 	time_array = numpy.linspace(0,(samples_per_waveform-1)/sampling_frequency,samples_per_waveform)
 	
-	waveforms = ifile['Waveforms;1']
+	number_of_events_to_be_processed = int(len(waveforms['event'].array())/2)
+	
+	if number_of_events_for_which_to_produce_control_plots > 0:
+		path_to_directory_in_which_to_save_the_control_plots = sqlite_database_path.with_suffix('.control_plots')
+		path_to_directory_in_which_to_save_the_control_plots.mkdir()
+	
 	iterators = [waveforms[_].iterate(step_size=1, library='np') for _ in ['event','producer','voltages']]
 	CAENs_names = []
 	with SQLiteDataFrameDumper(sqlite_database_path, dump_after_n_appends = 11111, dump_after_seconds = 60, delete_database_if_already_exists=True) as parsed_data_dumper: 
@@ -56,13 +63,16 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 				CAENs_names.append(CAEN_name)
 			n_CAEN = CAENs_names.index(CAEN_name)
 			
+			produce_control_plots_for_this_event = numpy.random.randint(0,number_of_events_to_be_processed) < number_of_events_for_which_to_produce_control_plots
+			
 			this_event_parsed_data = []
 			for n_channel, waveform_samples in enumerate(voltages):
+				waveform = PeakSignal(
+					samples = -1*numpy.array(waveform_samples), # Multiply by -1 to make them positive.
+					time = time_array,
+				)
 				parsed = parse_waveform(
-					PeakSignal(
-						samples = -1*numpy.array(waveform_samples), # Multiply by -1 to make them positive.
-						time = time_array,
-					),
+					waveform,
 					vertical_unit = 'V', # Volts.
 					horizontal_unit = 's', # Seconds.
 				)
@@ -70,6 +80,14 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 				parsed['n_CAEN'] = n_CAEN
 				parsed['n_event'] = n_event
 				this_event_parsed_data.append(parsed)
+				
+				if produce_control_plots_for_this_event:
+					fig = draw_in_plotly(waveform)
+					fig.write_html(
+						path_to_directory_in_which_to_save_the_control_plots/f'n_event_{n_event}_n_CAEN_{n_CAEN}_n_channel_{n_channel}.html',
+						include_plotlyjs = 'cdn',
+					)
+				
 			this_event_parsed_data = pandas.DataFrame.from_records(this_event_parsed_data)
 			this_event_parsed_data.set_index(['n_event','n_CAEN','n_channel'], inplace=True)
 			parsed_data_dumper.append(this_event_parsed_data)
@@ -91,14 +109,20 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 	if force==False and bureaucrat.was_task_run_successfully('parse_waveforms'):
 		return
 	
+	NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS = 5
+	
 	with bureaucrat.handle_task('parse_waveforms') as employee:
 		path_to_directory_in_which_to_save_sqlite_databases = employee.path_to_directory_of_my_task/'parsed_data'
 		path_to_directory_in_which_to_save_sqlite_databases.mkdir()
 		for path_to_root_file in (employee.path_to_directory_of_task('raw_to_root')/'root_files').iterdir():
+			sqlite_database_path = path_to_directory_in_which_to_save_sqlite_databases/path_to_root_file.name.replace('.root','.sqlite')
 			parse_waveforms_from_root_file_and_create_sqlite_database(
 				root_file_path = path_to_root_file,
-				sqlite_database_path = path_to_directory_in_which_to_save_sqlite_databases/path_to_root_file.name.replace('.root','.sqlite')
+				sqlite_database_path = sqlite_database_path,
+				number_of_events_for_which_to_produce_control_plots = NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS,
 			)
+			if NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS > 0:
+				sqlite_database_path.with_suffix('.control_plots').rename(sqlite_database_path.parent.parent/sqlite_database_path.with_suffix('.control_plots').name)
 
 if __name__=='__main__':
 	import argparse
