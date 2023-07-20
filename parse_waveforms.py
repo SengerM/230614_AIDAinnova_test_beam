@@ -81,8 +81,8 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 	with `caenCliRootWF`."""
 	ifile = uproot.open(root_file_path)
 	
-	metadata = ifile['Metadata;1']
-	waveforms = ifile['Waveforms;1']
+	metadata = ifile['Metadata']
+	waveforms = ifile['Waveforms']
 	
 	sampling_frequency = metadata['sampling_frequency_MHz'].array()[0]*1e6
 	samples_per_waveform = metadata['samples_per_waveform'].array()[0]
