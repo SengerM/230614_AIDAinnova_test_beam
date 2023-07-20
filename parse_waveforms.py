@@ -112,8 +112,13 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 			
 			this_event_parsed_data = []
 			for n_channel, waveform_samples in enumerate(voltages):
+				if n_channel in {16,17}: # These are the trigger signals, which are square pulses. They require a bit of a special treatment.
+					samples = numpy.array(waveform_samples)
+					samples[-10:] = samples[:10].mean() # This is so the signal looks like a peak, i.e. a signal that rises and goes down, and my analysis framework for peak signals can handle also this step function.
+				else:
+					samples = -1*numpy.array(waveform_samples) # Multiply by -1 to make them positive.
 				waveform = PeakSignal(
-					samples = -1*numpy.array(waveform_samples), # Multiply by -1 to make them positive.
+					samples = samples,
 					time = time_array,
 				)
 				parsed = parse_waveform(
