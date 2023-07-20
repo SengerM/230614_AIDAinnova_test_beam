@@ -8,6 +8,8 @@ from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/Senger
 import plotly.graph_objects as go
 from raw_to_root import raw_to_root
 import logging
+import utils
+import subprocess
 
 def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
 	"""Parse a waveform and extract features like the amplitude, noise,
@@ -140,7 +142,12 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 			parsed_data_dumper.append(this_event_parsed_data)
 			
 			if n_event%99==0 and n_CAEN == len(CAENs_names)-1:
-				logging.info(f'Event {n_event} processed. ({n_event/number_of_events_to_be_processed*100:.0f} % completed for file {root_file_path.name})')
+				logging.info(f'{n_event}/{number_of_events_to_be_processed} events processed. ({n_event/number_of_events_to_be_processed*100:.0f} %, {root_file_path.name})')
+		
+		CAENs_names = pandas.Series(CAENs_names)
+		CAENs_names.index.set_names('n_CAEN',inplace=True)
+		CAENs_names.name = 'CAEN name'
+		utils.save_dataframe(CAENs_names, name=sqlite_database_path.name.replace('.sqlite','_CAENs_names'), location=sqlite_database_path.parent)
 
 def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 	"""Parse the waveforms from a run and store the data in SQLite
@@ -164,6 +171,8 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 	with bureaucrat.handle_task('parse_waveforms') as employee:
 		path_to_directory_in_which_to_save_sqlite_databases = employee.path_to_directory_of_my_task/'parsed_data'
 		path_to_directory_in_which_to_save_sqlite_databases.mkdir()
+		path_to_CAENs_names_dir = employee.path_to_directory_of_my_task/'CAENs_names'
+		path_to_CAENs_names_dir.mkdir()
 		for path_to_root_file in (employee.path_to_directory_of_task('raw_to_root')/'root_files').iterdir():
 			sqlite_database_path = path_to_directory_in_which_to_save_sqlite_databases/path_to_root_file.name.replace('.root','.sqlite')
 			parse_waveforms_from_root_file_and_create_sqlite_database(
@@ -171,10 +180,14 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 				sqlite_database_path = sqlite_database_path,
 				number_of_events_for_which_to_produce_control_plots = NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS,
 			)
+			for fmt in ['csv','pickle']:
+				subprocess.run(['mv', str(sqlite_database_path.parent)+f'/{sqlite_database_path.name.replace(".sqlite","")}_CAENs_names.{fmt}', str(path_to_CAENs_names_dir)])
+			CAENs_names_path = sqlite_database_path.parent/(sqlite_database_path.name.replace('.sqlite','_CAENs_names'))
 			if NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS > 0:
 				sqlite_database_path.with_suffix('.control_plots').rename(sqlite_database_path.parent.parent/sqlite_database_path.with_suffix('.control_plots').name)
 
 def parse_from_raw(bureaucrat:RunBureaucrat, force:bool=False):
+	utils.setup_batch_info(bureaucrat)
 	raw_to_root(bureaucrat=bureaucrat, force=force)
 	parse_waveforms(bureaucrat=bureaucrat, force=force)
 
