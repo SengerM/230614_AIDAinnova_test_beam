@@ -191,10 +191,10 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 			if NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS > 0:
 				sqlite_database_path.with_suffix('.control_plots').rename(sqlite_database_path.parent.parent/sqlite_database_path.with_suffix('.control_plots').name)
 
-def parse_from_raw(bureaucrat:RunBureaucrat, force:bool=False):
+def parse_from_raw(bureaucrat:RunBureaucrat, force_raw_to_root:bool=False, force_root_to_sqlite:bool=False):
 	utils.setup_batch_info(bureaucrat)
-	raw_to_root(bureaucrat=bureaucrat, force=force)
-	parse_waveforms(bureaucrat=bureaucrat, force=force)
+	raw_to_root(bureaucrat=bureaucrat, force=force_raw_to_root)
+	parse_waveforms(bureaucrat=bureaucrat, force=force_root_to_sqlite)
 
 if __name__=='__main__':
 	import argparse
@@ -216,14 +216,21 @@ if __name__=='__main__':
 		type = str,
 	)
 	parser.add_argument(
-		'--force',
+		'--force_raw_to_root',
 		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
 		required = False,
-		dest = 'force',
+		dest = 'force_raw_to_root',
+		action = 'store_true'
+	)
+	parser.add_argument(
+		'--force_root_to_sqlite',
+		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
+		required = False,
+		dest = 'force_root_to_sqlite',
 		action = 'store_true'
 	)
 	
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	parse_from_raw(bureaucrat, force=args.force)
+	parse_from_raw(bureaucrat, force_raw_to_root=args.force_raw_to_root, force_root_to_sqlite=args.force_root_to_sqlite)
