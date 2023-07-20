@@ -146,7 +146,7 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 		
 		CAENs_names = pandas.Series(CAENs_names)
 		CAENs_names.index.set_names('n_CAEN',inplace=True)
-		CAENs_names.name = 'CAEN name'
+		CAENs_names.name = 'CAEN_name'
 		utils.save_dataframe(CAENs_names, name=sqlite_database_path.name.replace('.sqlite','_CAENs_names'), location=sqlite_database_path.parent)
 
 def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
