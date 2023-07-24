@@ -65,6 +65,7 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 						
 						this_batch_n_events = keep_this['n_event'].drop_duplicates().to_frame()
 						this_batch_n_events['n_trigger'] = numpy.arange(start=absolute_n_trigger, stop=absolute_n_trigger+len(this_batch_n_events))
+						absolute_n_trigger += len(this_batch_n_events)
 						this_batch_n_events.set_index('n_event', inplace=True)
 						this_batch_n_events = this_batch_n_events['n_trigger']
 						keep_this = keep_this.join(this_batch_n_events, on='n_event')
@@ -74,10 +75,9 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 						for col in ['Amplitude (V)','Collected charge (V s)','Whole signal integral (V s)']:
 							keep_this[col] *= -1
 						data_dumper.append(keep_this)
-						logging.info(f'{n_event_low} events from file {sqlite_file_path.name}, total {absolute_n_trigger}')
+						logging.info(f'{n_event_high} events from file {sqlite_file_path.name}, total {absolute_n_trigger}')
 						n_event_low = n_event_high
 						current_lowest_n_waveform += len(keep_this)
-						absolute_n_trigger += len(keep_this)
 						
 
 if __name__=='__main__':
