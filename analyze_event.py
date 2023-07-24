@@ -75,6 +75,9 @@ def analyze_event(bureaucrat:RunBureaucrat, n_run:int, n_event:int):
 				fig.update_layout(
 					title = f'Run {n_run}, event {n_event}, DUT: {DUT_name} ({row},{col}), CAEN: {CAEN_name} {CAEN_channel_name}<br><sup>{bureaucrat.run_name}</sup>',
 				)
+				fig.update_traces(
+					hoverinfo = 'skip',
+				)
 				fig.write_html(
 					save_plots_here/f'{DUT_name}_{row}{col}_CAEN_{CAEN_name}.html',
 					include_plotlyjs = 'cdn',
