@@ -61,11 +61,17 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 							)
 						keep_this = pandas.concat(keep_this)
 						keep_this = keep_this.reset_index(drop=False).merge(we_are_interested_in.reset_index(drop=False).set_index(['n_CAEN','CAEN_n_channel'])[['DUT_name','row','col']], on=['n_CAEN','CAEN_n_channel'])
-						keep_this['n_trigger'] = numpy.arange(start=absolute_n_trigger, stop=absolute_n_trigger+len(keep_this))
 						keep_this['signal_name'] = keep_this[['DUT_name','row','col']].apply(lambda x: f'{x["DUT_name"]}_{x["row"]}{x["col"]}', axis=1)
+						
+						this_batch_n_events = keep_this['n_event'].drop_duplicates().to_frame()
+						this_batch_n_events['n_trigger'] = numpy.arange(start=absolute_n_trigger, stop=absolute_n_trigger+len(this_batch_n_events))
+						this_batch_n_events.set_index('n_event', inplace=True)
+						this_batch_n_events = this_batch_n_events['n_trigger']
+						keep_this = keep_this.join(this_batch_n_events, on='n_event')
+						
 						keep_this.set_index(['n_trigger','signal_name'], inplace=True)
 						keep_this['n_waveform'] = numpy.array([n_waveform for n_waveform in range(current_lowest_n_waveform,current_lowest_n_waveform+len(keep_this))])
-						for col in ['Amplitude (V)','Collected charge (V s)']:
+						for col in ['Amplitude (V)','Collected charge (V s)','Whole signal integral (V s)']:
 							keep_this[col] *= -1
 						data_dumper.append(keep_this)
 						logging.info(f'{n_event_low} events from file {sqlite_file_path.name}, total {absolute_n_trigger}')
