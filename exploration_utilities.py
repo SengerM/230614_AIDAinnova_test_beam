@@ -7,6 +7,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 import utils
 import logging
+import sqlite3
 
 def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot=11111):
 	bureaucrat.check_these_tasks_were_run_successfully(['parse_waveforms','batch_info'])
@@ -112,14 +113,19 @@ def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot=11111):
 def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 	bureaucrat.check_these_tasks_were_run_successfully(['parse_waveforms','batch_info'])
 	
+	INDEX_COLS = ['n_event','n_CAEN','CAEN_n_channel']
+	variables_for_which_to_plot_correlation = ['Amplitude (V)']
+	
 	logging.info(f'Reading data for run {bureaucrat.run_name}...')
 	data = []
 	CAENs_names = []
+	columns_to_load = INDEX_COLS + variables_for_which_to_plot_correlation
 	for sqlite_file_path in sorted((bureaucrat.path_to_directory_of_task('parse_waveforms')/'parsed_data').iterdir(), key=lambda x: x.stat().st_size):
 		number_of_events_already_loaded = sum([len(_.index.get_level_values('n_event').drop_duplicates()) for _ in data])
 		logging.info(f'Loading {sqlite_file_path.name} ({number_of_events_already_loaded} events loaded so far)')
 		n_run = int(sqlite_file_path.name.split('_')[0].replace('run',''))
-		df = load_whole_dataframe(sqlite_file_path)
+		sqlite_connection = sqlite3.connect(sqlite_file_path)
+		df = pandas.read_sql(f'SELECT {",".join([f"`{_}`" for _ in columns_to_load])} FROM dataframe_table', sqlite_connection).set_index(INDEX_COLS)
 		df['n_run'] = n_run
 		df.set_index('n_run',append=True,inplace=True)
 		data.append(df)
@@ -150,13 +156,6 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 	data.set_index(['n_run','n_event','n_CAEN','CAEN_trigger_group_n'], inplace=True)
 	data.sort_index(inplace=True)
 	
-	trigger_time = data.query('CAEN_channel_name in ["trigger_group_0","trigger_group_1"]')['t_50 (s)']
-	trigger_time.name = 'Trigger time (s)'
-	data['t_50 from trigger (s)'] = data['t_50 (s)'] - trigger_time
-	
-	for col in {'Amplitude (V)','Collected charge (V s)'}:
-		data[f'-{col}'] = -1*data[col]
-	
 	absolute_n_event = data.reset_index(drop=False)[['n_run','n_event']].drop_duplicates(ignore_index=True)
 	absolute_n_event.index.rename('n_event_absolute', inplace=True)
 	absolute_n_event.reset_index(drop=False, inplace=True)
@@ -165,14 +164,13 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 	
 	
 	logging.info(f'Calculating correlations...')
-	correlations = data.reset_index(drop=False).query('`Amplitude (V)`<0')[['t_50 (s)', 't_50 from trigger (s)','Amplitude (V)','DUT_name','row','col','n_event_absolute']]
+	correlations = data.reset_index(drop=False).query('`Amplitude (V)`<0')[variables_for_which_to_plot_correlation+['DUT_name','row','col','n_event_absolute']]
 	correlations = correlations.query('DUT_name != "trigger"')
 	correlations.set_index(['DUT_name','row','col','n_event_absolute'], inplace=True)
 	correlations.sort_index(inplace=True)
 	correlations = correlations.unstack(['DUT_name','row','col'])
 	correlations = correlations.corr()
 	
-	logging.info(f'Producing plots for run {bureaucrat.run_name}...')
 	with bureaucrat.handle_task('correlation_plots') as employee:
 		logging.info('Plotting correlations...')
 		for col in correlations.columns.get_level_values(0):
