@@ -34,7 +34,7 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 	we_are_interested_in = pandas.concat(we_are_interested_in)
 	we_are_interested_in.set_index(['DUT_name','row','col'], inplace=True)
 	
-	with bureaucrat.handle_task('beta_scan_like_subsets', drop_old_data=True) as employee:
+	with bureaucrat.handle_task('beta_scan_like_subsets', drop_old_data=False) as employee:
 		logging.info(f'About to process {bureaucrat.run_name}...')
 		subrun = employee.create_subrun('_'.join([f'{DUT_name}_{pixels[DUT_name][0]}{pixels[DUT_name][1]}' for DUT_name in sorted(pixels)]))
 		with subrun.handle_task('beta_scan') as subemployee:
