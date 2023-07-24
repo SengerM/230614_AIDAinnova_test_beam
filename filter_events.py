@@ -34,11 +34,13 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 	we_are_interested_in = pandas.concat(we_are_interested_in)
 	we_are_interested_in.set_index(['DUT_name','row','col'], inplace=True)
 	
-	with bureaucrat.handle_task('beta_scan_like_subsets', drop_old_data=False) as employee:
+	with bureaucrat.handle_task('beta_scan_like_subsets', drop_old_data=True) as employee:
+		logging.info(f'About to process {bureaucrat.run_name}...')
 		subrun = employee.create_subrun('_'.join([f'{DUT_name}_{pixels[DUT_name][0]}{pixels[DUT_name][1]}' for DUT_name in sorted(pixels)]))
 		with subrun.handle_task('beta_scan') as subemployee:
 			with SQLiteDataFrameDumper(subemployee.path_to_directory_of_my_task/'parsed_from_waveforms.sqlite', dump_after_n_appends=999) as data_dumper:
 				current_lowest_n_waveform = 0
+				absolute_n_trigger = 0
 				for sqlite_file_path in (bureaucrat.path_to_directory_of_task('parse_waveforms')/'parsed_data').iterdir():
 					n_run = int(sqlite_file_path.name.split('_')[0].replace('run',''))
 					connection = sqlite3.connect(sqlite_file_path)
@@ -59,35 +61,33 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 							)
 						keep_this = pandas.concat(keep_this)
 						keep_this = keep_this.reset_index(drop=False).merge(we_are_interested_in.reset_index(drop=False).set_index(['n_CAEN','CAEN_n_channel'])[['DUT_name','row','col']], on=['n_CAEN','CAEN_n_channel'])
-						keep_this['n_trigger'] = keep_this['n_event']
+						keep_this['n_trigger'] = numpy.arange(start=absolute_n_trigger, stop=absolute_n_trigger+len(keep_this))
 						keep_this['signal_name'] = keep_this[['DUT_name','row','col']].apply(lambda x: f'{x["DUT_name"]}_{x["row"]}{x["col"]}', axis=1)
 						keep_this.set_index(['n_trigger','signal_name'], inplace=True)
 						keep_this['n_waveform'] = numpy.array([n_waveform for n_waveform in range(current_lowest_n_waveform,current_lowest_n_waveform+len(keep_this))])
 						for col in ['Amplitude (V)','Collected charge (V s)']:
 							keep_this[col] *= -1
 						data_dumper.append(keep_this)
+						logging.info(f'{n_event_low} events from file {sqlite_file_path.name}, total {absolute_n_trigger}')
 						n_event_low = n_event_high
 						current_lowest_n_waveform += len(keep_this)
-						logging.info(f'{n_event_low} events were processed.')
+						absolute_n_trigger += len(keep_this)
+						
 
 if __name__=='__main__':
-	import argparse
 	from grafica.plotly_utils.utils import set_my_template_as_default
+	import sys
 	
 	set_my_template_as_default()
 	
-	parser = argparse.ArgumentParser()
-	parser.add_argument('--dir',
-		metavar = 'path', 
-		help = 'Path to the base measurement directory.',
-		required = True,
-		dest = 'directory',
-		type = str,
+	logging.basicConfig(
+		stream = sys.stderr, 
+		level = logging.DEBUG,
+		format = '%(asctime)s|%(levelname)s|%(funcName)s|%(message)s',
+		datefmt = '%Y-%m-%d %H:%M:%S',
 	)
-	
-	args = parser.parse_args()
-	bureaucrat = RunBureaucrat(Path(args.directory))
+
 	filter_two_pixels_for_beta_scan_like_time_resolution(
-		bureaucrat, 
-		pixels = {'TI143':(0,0), 'time_reference_1':(0,0)},
+		bureaucrat = RunBureaucrat(Path('/home/msenger/June_test_beam_data/analysis/batch_2_230V')),
+		pixels = {'TI115':(1,0), 'time_reference_1':(1,0)},
 	)
