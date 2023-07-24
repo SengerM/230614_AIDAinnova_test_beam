@@ -51,7 +51,7 @@ def analyze_event(bureaucrat:RunBureaucrat, n_run:int, n_event:int):
 	signals_connections.sort_index(inplace=True)
 	
 	with bureaucrat.handle_task('analyze_specific_events', drop_old_data=False) as employee:
-		save_plots_here = employee.path_to_directory_of_my_task/f'n_event_{n_event}'
+		save_plots_here = employee.path_to_directory_of_my_task/f'n_run_{n_run}_n_event_{n_event}'
 		save_plots_here.mkdir()
 		for n_CAEN,idx in enumerate(indices_where_to_look_for):
 			CAEN_name = waveforms['producer'].array(entry_start=idx,entry_stop=idx+1, library='np')[0]
@@ -70,7 +70,7 @@ def analyze_event(bureaucrat:RunBureaucrat, n_run:int, n_event:int):
 					time = time_array,
 					peak_polarity = 'guess',
 				)
-				fig = plot_waveform(signal)
+				fig = plot_waveform(signal, peak_start_time=False)
 				fig.update_layout(
 					title = f'Event {n_event}, DUT: {DUT_name} ({row},{col}), CAEN: {CAEN_name} {CAEN_channel_name}<br><sup>{bureaucrat.run_name}</sup>',
 				)
@@ -82,6 +82,14 @@ def analyze_event(bureaucrat:RunBureaucrat, n_run:int, n_event:int):
 if __name__=='__main__':
 	import argparse
 	from grafica.plotly_utils.utils import set_my_template_as_default
+	import sys
+	
+	logging.basicConfig(
+		stream = sys.stderr, 
+		level = logging.DEBUG,
+		format = '%(asctime)s|%(levelname)s|%(funcName)s|%(message)s',
+		datefmt = '%Y-%m-%d %H:%M:%S',
+	)
 	
 	set_my_template_as_default()
 	
