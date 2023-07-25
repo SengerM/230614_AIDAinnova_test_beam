@@ -122,14 +122,14 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 	columns_to_load = INDEX_COLS + variables_for_which_to_plot_correlation
 	for sqlite_file_path in sorted((bureaucrat.path_to_directory_of_task('parse_waveforms')/'parsed_data').iterdir(), key=lambda x: x.stat().st_size):
 		number_of_events_already_loaded = sum([len(_.index.get_level_values('n_event').drop_duplicates()) for _ in data])
-		logging.info(f'Loading {sqlite_file_path.name} ({number_of_events_already_loaded} events loaded so far)')
+		logging.info(f'Loading {sqlite_file_path.name}...')
 		n_run = int(sqlite_file_path.name.split('_')[0].replace('run',''))
 		sqlite_connection = sqlite3.connect(sqlite_file_path)
 		df = pandas.read_sql(f'SELECT {",".join([f"`{_}`" for _ in columns_to_load])} FROM dataframe_table', sqlite_connection).set_index(INDEX_COLS)
 		df['n_run'] = n_run
-		df.set_index('n_run',append=True,inplace=True)
+		df.reset_index(inplace=True, drop=False)
+		df.set_index(['n_run','n_event','n_CAEN','CAEN_n_channel'], inplace=True)
 		data.append(df)
-		
 		df = pandas.read_pickle(bureaucrat.path_to_directory_of_task('parse_waveforms')/'CAENs_names'/sqlite_file_path.name.replace('.sqlite','_CAENs_names.pickle'))
 		df = df.to_frame()
 		df['n_run'] = n_run
@@ -137,6 +137,7 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 		CAENs_names.append(df)
 		
 		number_of_events_already_loaded = sum([len(_.index.get_level_values('n_event').drop_duplicates()) for _ in data])
+		logging.info(f'Loaded {sqlite_file_path.name}, {number_of_events_already_loaded} events up to now')
 		if max_events_to_plot is not None and number_of_events_already_loaded > max_events_to_plot:
 			logging.info(f'Already loaded {number_of_events_already_loaded} events, not loading more SQLite files.')
 			break
@@ -144,7 +145,7 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 	CAENs_names = pandas.concat(CAENs_names)
 	CAENs_names['CAEN_name'] = CAENs_names['CAEN_name'].apply(lambda x: x.replace('CAEN_',''))
 	signals_connections = utils.load_setup_configuration_info(bureaucrat)
-	logging.info(f'Data for run {bureaucrat.run_name} was read.')
+	logging.info(f'{len(data.reset_index(drop=False)[["n_run","n_event"]].drop_duplicates())} events loaded for {bureaucrat.run_name}')
 	
 	signals_connections['rowcol'] = signals_connections[['row','col']].apply(lambda x: f"{x['row']},{x['col']}", axis=1)
 	
