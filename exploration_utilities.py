@@ -163,9 +163,10 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 	absolute_n_event.set_index(['n_run','n_event'], inplace=True)
 	data['n_event_absolute'] = absolute_n_event
 	
-	
 	logging.info(f'Calculating correlations...')
-	correlations = data.reset_index(drop=False).query('`Amplitude (V)`<0')[variables_for_which_to_plot_correlation+['DUT_name','row','col','n_event_absolute']]
+	correlations = data.reset_index(drop=False)
+	correlations = correlations.query('`Amplitude (V)`<0')
+	correlations = correlations[variables_for_which_to_plot_correlation+['DUT_name','row','col','n_event_absolute']]
 	correlations = correlations.query('DUT_name != "trigger"')
 	correlations.set_index(['DUT_name','row','col','n_event_absolute'], inplace=True)
 	correlations.sort_index(inplace=True)
