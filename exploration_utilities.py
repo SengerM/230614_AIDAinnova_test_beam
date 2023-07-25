@@ -175,8 +175,12 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 		logging.info('Plotting correlations...')
 		for col in correlations.columns.get_level_values(0):
 			df = correlations.loc[col,col]
+			df = df.copy()
 			df.columns = [f'{DUT_name} ({row},{col})' for DUT_name,row,col in df.columns]
 			df.index = [f'{DUT_name} ({row},{col})' for DUT_name,row,col in df.index]
+			mask = numpy.ones(df.shape,dtype='bool')
+			mask[numpy.tril_indices(len(df))] = False
+			df[mask] = float('NaN')
 			fig = px.imshow(
 				df, 
 				aspect = "auto",
