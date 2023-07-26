@@ -110,7 +110,7 @@ def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot=11111):
 	)
 	fig.write_image(employee.path_to_directory_of_my_task/f't_50_from_trigger_vs_-ampliutde.png')
 	
-def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
+def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None, amplitude_threshold:float=-15e-3):
 	bureaucrat.check_these_tasks_were_run_successfully(['parse_waveforms','batch_info'])
 	
 	INDEX_COLS = ['n_event','n_CAEN','CAEN_n_channel']
@@ -171,27 +171,35 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None):
 	correlations.set_index(['DUT_name','row','col','n_event_absolute'], inplace=True)
 	correlations.sort_index(inplace=True)
 	correlations = correlations.unstack(['DUT_name','row','col'])
-	correlations = correlations.corr()
+	def hit_correlation(a,b,threshold=-15e-3):
+		a[a>threshold] = numpy.nan
+		b[b>threshold] = numpy.nan
+		c = a*b
+		c = ~numpy.isnan(c)
+		return numpy.nanmean(c)
+	
+	correlations = correlations.corr(method=lambda x,y: hit_correlation(x,y,threshold=amplitude_threshold))
 	
 	with bureaucrat.handle_task('correlation_plots') as employee:
 		logging.info('Plotting correlations...')
-		for col in correlations.columns.get_level_values(0):
+		for col in ['Amplitude (V)']:
 			df = correlations.loc[col,col]
 			df = df.copy()
 			df.columns = [f'{DUT_name} ({row},{col})' for DUT_name,row,col in df.columns]
 			df.index = [f'{DUT_name} ({row},{col})' for DUT_name,row,col in df.index]
-			mask = numpy.ones(df.shape,dtype='bool')
-			mask[numpy.tril_indices(len(df))] = False
+			mask = numpy.zeros(df.shape,dtype='bool')
+			# ~ mask[numpy.triu_indices(len(df))] = True
+			mask[numpy.diag_indices(len(df))] = True
 			df[mask] = float('NaN')
 			fig = px.imshow(
 				df, 
 				aspect = "auto",
-				title = f'{col} correlation<br><sup>{bureaucrat.run_name}</sup>',
-				labels = dict(color=f'ρ({col})'),
+				title = f'Hit correlation<br><sup>{bureaucrat.run_name}, threshold={abs(amplitude_threshold)*1e3} mV</sup>',
+				labels = dict(color=f'Fraction of coincidences'),
 			)
 			fig.update_coloraxes(colorbar_title_side='right')
 			fig.write_html(
-				employee.path_to_directory_of_my_task/f'{col}_correlation.html',
+				employee.path_to_directory_of_my_task/f'correlation.html',
 				include_plotlyjs = 'cdn',
 			)
 
@@ -203,7 +211,7 @@ if __name__=='__main__':
 	logging.basicConfig(
 		stream = sys.stderr, 
 		level = logging.DEBUG,
-		format = '%(asctime)s|%(levelname)s|%(funcName)s|%(message)s',
+		format = '%(asctime)s|%(levelname)s|%(message)s',
 		datefmt = '%Y-%m-%d %H:%M:%S',
 	)
 	
@@ -217,8 +225,19 @@ if __name__=='__main__':
 		dest = 'directory',
 		type = str,
 	)
+	parser.add_argument('--threshold',
+		metavar = 'V',
+		help = 'Threshold in volt for the amplitude to consider a pixel activation when calculating the hit correlation. Default is 15e-3.',
+		required = False,
+		dest = 'threshold',
+		type = float,
+		default = 15e-3,
+	)
 	
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	do_correlation_plots(bureaucrat)
+	do_correlation_plots(
+		bureaucrat,
+		amplitude_threshold = -abs(args.threshold),
+	)
