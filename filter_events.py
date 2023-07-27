@@ -83,6 +83,7 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 if __name__=='__main__':
 	from grafica.plotly_utils.utils import set_my_template_as_default
 	import sys
+	import argparse
 	
 	set_my_template_as_default()
 	
@@ -92,8 +93,21 @@ if __name__=='__main__':
 		format = '%(asctime)s|%(levelname)s|%(funcName)s|%(message)s',
 		datefmt = '%Y-%m-%d %H:%M:%S',
 	)
-
-	filter_two_pixels_for_beta_scan_like_time_resolution(
-		bureaucrat = RunBureaucrat(Path('/home/msenger/June_test_beam_data/analysis/batch_2_230V')),
-		pixels = {'TI115':(1,0), 'time_reference_1':(1,0)},
+	
+	parser = argparse.ArgumentParser(description='Creates a subrun that looks like a beta scan using whichever two pixels from the test beam, so the time resolution can be quickly calculated.')
+	parser.add_argument(
+		'--execute',
+		help = 'Since the configuration of this script is hardcoded in the code, this flag is required to be sure you want to actually run it.',
+		required = False,
+		dest = 'execute',
+		action = 'store_true',
 	)
+	args = parser.parse_args()
+	
+	if args.execute == True:
+		filter_two_pixels_for_beta_scan_like_time_resolution(
+			bureaucrat = RunBureaucrat(Path('/home/msenger/June_test_beam_data/analysis/batch_2_230V')),
+			pixels = {'TI116':(1,0), 'TI122':(1,0)},
+		)
+	else:
+		print('Nothing is done, run the script with the option `-h` for more info.')
