@@ -38,8 +38,8 @@ def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
 		parsed[f't_{pp} ({horizontal_unit})'] = time_at_this_pp
 	return parsed
 
-def plot_waveform(waveform:PeakSignal):
-	fig = draw_in_plotly(waveform)
+def plot_waveform(waveform:PeakSignal, peak_start_time:bool=True):
+	fig = draw_in_plotly(waveform, peak_start_time=peak_start_time)
 	fig.update_layout(
 		xaxis_title = "Time (s)",
 		yaxis_title = "Amplitude (V)",
