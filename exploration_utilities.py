@@ -9,7 +9,7 @@ import utils
 import logging
 import sqlite3
 
-def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot=11111):
+def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(50e3)):
 	bureaucrat.check_these_tasks_were_run_successfully(['parse_waveforms','batch_info'])
 	
 	logging.info(f'Reading data for run {bureaucrat.run_name}...')
@@ -75,11 +75,13 @@ def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot=11111):
 	
 	logging.info(f'Producing plots for run {bureaucrat.run_name}...')
 	data.reset_index(inplace=True, drop=False)
+	data = data.sample(n=max_events_to_plot)
 	data = data.sort_values(by=['DUT_name','rowcol'])
 	with bureaucrat.handle_task('some_plots') as employee:
 		for col in ['t_50 from trigger (s)','-Amplitude (V)','-Collected charge (V s)','Noise (V)','t_50 (s)','SNR']:
 			logging.info(f'Plotting {repr(col)}...')
 			fig = px.ecdf(
+				title = f'{col} distribution<br><sup>{bureaucrat.run_name}</sup>',
 				data_frame = data,
 				x = col,
 				color = 'rowcol',
@@ -94,21 +96,41 @@ def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot=11111):
 				include_plotlyjs = 'cdn',
 			)
 			fig.write_image(employee.path_to_directory_of_my_task/f'{col}_ECFD.png')
-	
-	fig = px.density_heatmap(
-		data_frame = data.query('DUT_name not in ["trigger"]'),
-		x = 't_50 from trigger (s)',
-		y = '-Amplitude (V)',
-		facet_col = 'DUT_name',
-	)
-	fig.update_layout(
-		width = 666*len(data['DUT_name'].drop_duplicates()),
-	)
-	fig.write_html(
-		employee.path_to_directory_of_my_task/f't_50_from_trigger_vs_-ampliutde.html',
-		include_plotlyjs = 'cdn',
-	)
-	fig.write_image(employee.path_to_directory_of_my_task/f't_50_from_trigger_vs_-ampliutde.png')
+		
+		logging.info(f'Plotting amplitude vs time...')
+		fig = px.scatter(
+			title = f'Amplitude vs time distribution<br><sup>{bureaucrat.run_name}</sup>',
+			data_frame = data,
+			x = 't_50 from trigger (s)',
+			y = '-Amplitude (V)',
+			color = 'rowcol',
+			facet_col = 'DUT_name',
+			hover_data = ['n_run','n_event','CAEN_name'],
+		)
+		fig.update_layout(
+			width = 666*len(data['DUT_name'].drop_duplicates()),
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/f'amplitude_vs_time_scatter.html',
+			include_plotlyjs = 'cdn',
+		)
+		fig.write_image(employee.path_to_directory_of_my_task/f'amplitude_vs_time_scatter.png')
+		
+		fig = px.density_heatmap(
+			title = f'Amplitud evs time distribution<br><sup>{bureaucrat.run_name}</sup>',
+			data_frame = data.query('DUT_name not in ["trigger"]'),
+			x = 't_50 from trigger (s)',
+			y = '-Amplitude (V)',
+			facet_col = 'DUT_name',
+		)
+		fig.update_layout(
+			width = 666*len(data['DUT_name'].drop_duplicates()),
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/f'amplitude_vs_time_2DHist.html',
+			include_plotlyjs = 'cdn',
+		)
+		fig.write_image(employee.path_to_directory_of_my_task/f'amplitude_vs_time_2DHist.png')
 	
 def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None, amplitude_threshold:float=-15e-3):
 	bureaucrat.check_these_tasks_were_run_successfully(['parse_waveforms','batch_info'])
@@ -241,3 +263,4 @@ if __name__=='__main__':
 		bureaucrat,
 		amplitude_threshold = -abs(args.threshold),
 	)
+	# ~ do_quick_plots(bureaucrat)
