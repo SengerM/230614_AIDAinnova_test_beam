@@ -66,7 +66,7 @@ def jitter_estimation(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(5e3),
 	data = data.reset_index(['n_run','n_event'],drop=False).merge(signals_connections.set_index(['n_CAEN','CAEN_n_channel'])[['DUT_name','row','col','CAEN_name','DUT_name_rowcol']], on=['n_CAEN','CAEN_n_channel']).reset_index(drop=False).set_index(['n_run','n_event','n_CAEN','CAEN_n_channel'])
 	
 	signals_connections['DUT_name_rowcol_CAEN_and_trigger_group'] = signals_connections[['DUT_name_rowcol','CAEN_name','CAEN_trigger_group_n']].apply(lambda x: f'{x["DUT_name_rowcol"]} {x["CAEN_name"]}<sub>{x["CAEN_trigger_group_n"]}</sub>', axis=1)
-	print(signals_connections.sort_values('DUT_name_rowcol'))
+	signals_connections = signals_connections.query(f'CAEN_n_channel not in [16,17]')
 	
 	with bureaucrat.handle_task('jitter_estimation') as employee:
 		logging.info('Plotting amplitudes distribution...')
