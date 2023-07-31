@@ -36,7 +36,7 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 	
 	with bureaucrat.handle_task('beta_scan_like_subsets', drop_old_data=False) as employee:
 		logging.info(f'About to process {bureaucrat.run_name}...')
-		subrun = employee.create_subrun('_'.join([f'{DUT_name}_{pixels[DUT_name][0]}{pixels[DUT_name][1]}' for DUT_name in sorted(pixels)]))
+		subrun = employee.create_subrun('_'.join([bureaucrat.run_name] + [f'{DUT_name}_{pixels[DUT_name][0]}{pixels[DUT_name][1]}' for DUT_name in sorted(pixels)]))
 		with subrun.handle_task('beta_scan') as subemployee:
 			with SQLiteDataFrameDumper(subemployee.path_to_directory_of_my_task/'parsed_from_waveforms.sqlite', dump_after_n_appends=999) as data_dumper:
 				current_lowest_n_waveform = 0
