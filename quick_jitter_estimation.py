@@ -40,7 +40,7 @@ def jitter_estimation(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(5e3),
 		logging.info(f'Loading {sqlite_file_path.name}...')
 		n_run = int(sqlite_file_path.name.split('_')[0].replace('run',''))
 		sqlite_connection = sqlite3.connect(sqlite_file_path)
-		df = pandas.read_sql(f'SELECT {",".join([f"`{_}`" for _ in columns_to_load])} FROM dataframe_table WHERE `Amplitude (V)`<={amplitude_threshold_volts}', sqlite_connection)
+		df = pandas.read_sql(f'SELECT {",".join([f"`{_}`" for _ in columns_to_load])} FROM dataframe_table WHERE `Amplitude (V)`<={amplitude_threshold_volts} OR CAEN_n_channel in (16,17)', sqlite_connection)
 		df.set_index(INDEX_COLS, inplace=True)
 		df['n_run'] = n_run
 		df.reset_index(inplace=True, drop=False)
@@ -66,13 +66,12 @@ def jitter_estimation(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(5e3),
 	data = data.reset_index(['n_run','n_event'],drop=False).merge(signals_connections.set_index(['n_CAEN','CAEN_n_channel'])[['DUT_name','row','col','CAEN_name','DUT_name_rowcol']], on=['n_CAEN','CAEN_n_channel']).reset_index(drop=False).set_index(['n_run','n_event','n_CAEN','CAEN_n_channel'])
 	
 	signals_connections['DUT_name_rowcol_CAEN_and_trigger_group'] = signals_connections[['DUT_name_rowcol','CAEN_name','CAEN_trigger_group_n']].apply(lambda x: f'{x["DUT_name_rowcol"]} {x["CAEN_name"]}<sub>{x["CAEN_trigger_group_n"]}</sub>', axis=1)
-	signals_connections = signals_connections.query(f'CAEN_n_channel not in [16,17]')
 	
 	with bureaucrat.handle_task('jitter_estimation') as employee:
 		logging.info('Plotting amplitudes distribution...')
 		fig = px.ecdf(
 			title = f'Amplitudes distribution when estimating jitter<br><sup>{bureaucrat.run_name}</br>',
-			data_frame = data.sample(n=max_events_to_plot).reset_index(drop=False).sort_values(['DUT_name','row','col']),
+			data_frame = data.sample(n=max_events_to_plot).reset_index(drop=False).sort_values(['DUT_name','row','col']).query('CAEN_n_channel not in [16,17]'),
 			x = '-Amplitude (V)',
 			facet_row = 'row',
 			facet_col = 'col',
@@ -100,12 +99,13 @@ def jitter_estimation(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(5e3),
 		mask[numpy.diag_indices(len(n_coincidences))] = True
 		n_coincidences[mask] = 0
 		
+		jitter_estimation[n_coincidences<minimum_number_of_coincidences] = float('NaN')
+		
 		logging.info('Plotting jitter...')
 		df = jitter_estimation
 		mask = numpy.zeros(df.shape,dtype='bool')
 		mask[numpy.diag_indices(len(df))] = True
 		mask[n_coincidences<minimum_number_of_coincidences] = True
-		# ~ mask[df>222e-12] = True
 		df[mask] = float('NaN')
 		fig = plotly_utils.imshow_logscale(
 			df,
@@ -162,12 +162,11 @@ if __name__=='__main__':
 		type = str,
 	)
 	parser.add_argument('--threshold',
-		metavar = 'V',
-		help = 'Threshold in volt for the amplitude to consider a pixel activation when calculating the hit correlation. Default is 15e-3.',
-		required = False,
+		metavar = 'mV',
+		help = 'Threshold, in mili volt, for the amplitude to consider a pixel activation when calculating the hit correlation.',
+		required = True,
 		dest = 'threshold',
 		type = float,
-		default = 20e-3,
 	)
 	
 	args = parser.parse_args()
@@ -175,5 +174,5 @@ if __name__=='__main__':
 	
 	jitter_estimation(
 		bureaucrat,
-		amplitude_threshold_volts = -abs(args.threshold),
+		amplitude_threshold_volts = -abs(args.threshold)/1000,
 	)
