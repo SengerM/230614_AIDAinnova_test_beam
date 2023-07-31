@@ -73,8 +73,6 @@ def filter_two_pixels_for_beta_scan_like_time_resolution(bureaucrat:RunBureaucra
 						
 						keep_this.set_index(['n_trigger','signal_name'], inplace=True)
 						keep_this['n_waveform'] = numpy.array([n_waveform for n_waveform in range(current_lowest_n_waveform,current_lowest_n_waveform+len(keep_this))])
-						for col in ['Amplitude (V)','Collected charge (V s)','Whole signal integral (V s)']:
-							keep_this[col] *= -1
 						data_dumper.append(keep_this)
 						logging.info(f'{n_event_low} events from file {sqlite_file_path.name}, total {absolute_n_trigger}')
 						current_lowest_n_waveform += len(keep_this)
