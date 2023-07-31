@@ -69,9 +69,6 @@ def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(50e3)):
 	
 	data.reset_index(drop=False, inplace=True)
 	data.set_index(['n_event_absolute','DUT_name','rowcol'], drop=True, inplace=True)
-	data = data.unstack(['DUT_name','rowcol'])
-	# ~ data = data.loc[(data[('-Amplitude (V)','time_reference_1','1,0')]>.02)]
-	data = data.stack(['DUT_name','rowcol'])
 	
 	logging.info(f'Producing plots for run {bureaucrat.run_name}...')
 	data.reset_index(inplace=True, drop=False)
@@ -97,41 +94,25 @@ def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(50e3)):
 			)
 			fig.write_image(employee.path_to_directory_of_my_task/f'{col}_ECFD.png')
 		
-		logging.info(f'Plotting amplitude vs time...')
-		fig = px.scatter(
-			title = f'Amplitude vs time distribution<br><sup>{bureaucrat.run_name}</sup>',
-			data_frame = data,
-			x = 't_50 from trigger (s)',
-			y = '-Amplitude (V)',
-			color = 'rowcol',
-			facet_col = 'DUT_name',
-			hover_data = ['n_run','n_event','CAEN_name'],
-		)
-		fig.update_layout(
-			width = 666*len(data['DUT_name'].drop_duplicates()),
-		)
-		fig.write_html(
-			employee.path_to_directory_of_my_task/f'amplitude_vs_time_scatter.html',
-			include_plotlyjs = 'cdn',
-		)
-		fig.write_image(employee.path_to_directory_of_my_task/f'amplitude_vs_time_scatter.png')
-		
-		fig = px.density_heatmap(
-			title = f'Amplitud evs time distribution<br><sup>{bureaucrat.run_name}</sup>',
-			data_frame = data.query('DUT_name not in ["trigger"]'),
-			x = 't_50 from trigger (s)',
-			y = '-Amplitude (V)',
-			facet_col = 'DUT_name',
-		)
-		fig.update_layout(
-			width = 666*len(data['DUT_name'].drop_duplicates()),
-		)
-		fig.write_html(
-			employee.path_to_directory_of_my_task/f'amplitude_vs_time_2DHist.html',
-			include_plotlyjs = 'cdn',
-		)
-		fig.write_image(employee.path_to_directory_of_my_task/f'amplitude_vs_time_2DHist.png')
-	
+		for x,y in [('t_50 from trigger (s)','Amplitude (V)'),('Time over noise (s)','Amplitude (V)')]:
+			logging.info(f'Plotting {x} vs {y}...')
+			fig = px.scatter(
+				title = f'{y[:-4]} vs {x[:-4].lower()} distribution<br><sup>{bureaucrat.run_name}</sup>',
+				data_frame = data,
+				x = x,
+				y = y,
+				color = 'rowcol',
+				facet_col = 'DUT_name',
+				hover_data = ['n_run','n_event','CAEN_name'],
+			)
+			fig.update_layout(
+				width = 666*len(data['DUT_name'].drop_duplicates()),
+			)
+			fig.write_html(
+				employee.path_to_directory_of_my_task/f'{y[:-4].lower().replace(" ","_")}_vs_{x[:-4].lower().replace(" ","_")}_scatter.html',
+				include_plotlyjs = 'cdn',
+			)
+
 def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None, amplitude_threshold:float=-15e-3):
 	bureaucrat.check_these_tasks_were_run_successfully(['parse_waveforms','batch_info'])
 	
