@@ -208,7 +208,7 @@ def do_correlation_plots(bureaucrat:RunBureaucrat, max_events_to_plot=None, ampl
 
 if __name__=='__main__':
 	import argparse
-	from grafica.plotly_utils.utils import set_my_template_as_default
+	from plotly_utils import set_my_template_as_default
 	import sys
 	
 	logging.basicConfig(

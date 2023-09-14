@@ -207,7 +207,7 @@ def parse_from_raw(bureaucrat:RunBureaucrat, force_raw_to_root:bool=False, force
 if __name__=='__main__':
 	import argparse
 	import sys
-	from grafica.plotly_utils.utils import set_my_template_as_default
+	from plotly_utils import set_my_template_as_default
 	
 	set_my_template_as_default()
 	

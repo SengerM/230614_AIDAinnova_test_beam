@@ -96,7 +96,7 @@ def analyze_event(bureaucrat:RunBureaucrat, n_run:int, n_event:int):
 
 if __name__=='__main__':
 	import argparse
-	from grafica.plotly_utils.utils import set_my_template_as_default
+	from plotly_utils import set_my_template_as_default
 	import sys
 	
 	logging.basicConfig(
