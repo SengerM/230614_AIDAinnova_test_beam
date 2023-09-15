@@ -13,6 +13,8 @@ def which_test_beam_campaign(bureaucrat:RunBureaucrat):
 		return '230614_June'
 	elif bureaucrat.path_to_run_directory.parent.parent.name == '230830_August':
 		return '230830_August'
+	else:
+		raise RuntimeError(f'Cannot determine test beam campaign of run {bureaucrat.run_name}')
 
 def setup_batch_info(bureaucrat:RunBureaucrat):
 	"""Add some batch-wise information needed for the analysis, like
@@ -80,8 +82,23 @@ CAENs_CHANNELS_MAPPING_TO_INTEGERS = pandas.DataFrame(
 def load_setup_configuration_info(bureaucrat:RunBureaucrat)->pandas.DataFrame:
 	bureaucrat.check_these_tasks_were_run_successfully(['batch_info','parse_waveforms'])
 	
-	planes = pandas.read_excel(bureaucrat.path_to_directory_of_task('batch_info')/'setup_connections.ods', sheet_name='planes', index_col='plane_number')
-	signals_connections = pandas.read_excel(bureaucrat.path_to_directory_of_task('batch_info')/'setup_connections.ods', sheet_name='signals', index_col='plane_number')
+	if which_test_beam_campaign(bureaucrat) == '230614_June':
+		planes = pandas.read_excel(bureaucrat.path_to_directory_of_task('batch_info')/'setup_connections.ods', sheet_name='planes', index_col='plane_number')
+		signals_connections = pandas.read_excel(bureaucrat.path_to_directory_of_task('batch_info')/'setup_connections.ods', sheet_name='signals', index_col='plane_number')
+	elif which_test_beam_campaign(bureaucrat) == '230830_August':
+		planes = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'planes_definition.pickle')
+		signals_connections = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'pixels_definition.pickle')
+		for df in [planes,signals_connections]:
+			df.rename(
+				columns = {
+					'digitizer_name': 'CAEN_name',
+					'digitizer_channel_name': 'CAEN_channel_name',
+					'chubut_channel_number': 'chubut_channel',
+				},
+				inplace = True,
+			)
+	else:
+		raise RuntimeError(f'Cannot read setup information for run {bureaucrat.run_name}')
 	
 	CAENs_names = []
 	for sqlite_file_path in (bureaucrat.path_to_directory_of_task('parse_waveforms')/'parsed_data').iterdir():

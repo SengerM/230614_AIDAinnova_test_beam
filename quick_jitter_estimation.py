@@ -112,6 +112,7 @@ def jitter_estimation(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(5e3),
 			aspect = "auto",
 			title = f'Jitter estimation<br><sup>{bureaucrat.run_name}, threshold={abs(amplitude_threshold_volts)*1e3} mV, N coincidences>{minimum_number_of_coincidences}</sup>',
 			labels = dict(color=f'Jitter estimation (s)'),
+			text_auto = '.2e',
 		)
 		fig.update_coloraxes(colorbar_title_side = 'right')
 		fig.update_layout(
@@ -128,6 +129,7 @@ def jitter_estimation(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(5e3),
 			hoverinfo_z_format = ':d',
 			title = f'N coincidences<br><sup>{bureaucrat.run_name}, threshold={abs(amplitude_threshold_volts)*1e3} mV</sup>',
 			labels = dict(color=f'Number of coincidences'),
+			text_auto = ':.0f',
 		)
 		fig.update_coloraxes(colorbar_title_side = 'right')
 		fig.update_layout(
@@ -163,10 +165,17 @@ if __name__=='__main__':
 	)
 	parser.add_argument('--threshold',
 		metavar = 'mV',
-		help = 'Threshold, in mili volt, for the amplitude to consider a pixel activation when calculating the hit correlation.',
+		help = 'Threshold, in mili volt, for the amplitude to consider a pixel activation when calculating the hit correlation. The polarity does not matter, i.e. ±10 both have the same effect.',
 		required = True,
 		dest = 'threshold',
 		type = float,
+	)
+	parser.add_argument('--minimum_coincidences',
+		metavar = 'N',
+		help = 'Minimum number of coincidences to consider when calculating the jitter. Default is %(default)s.',
+		dest = 'minimum_number_of_coincidences',
+		type = int,
+		default = 100,
 	)
 	
 	args = parser.parse_args()
@@ -175,4 +184,5 @@ if __name__=='__main__':
 	jitter_estimation(
 		bureaucrat,
 		amplitude_threshold_volts = -abs(args.threshold)/1000,
+		minimum_number_of_coincidences = args.minimum_number_of_coincidences,
 	)
