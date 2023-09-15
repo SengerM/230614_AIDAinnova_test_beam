@@ -94,7 +94,7 @@ def do_quick_plots(bureaucrat:RunBureaucrat, max_events_to_plot:int=int(50e3)):
 			)
 			fig.write_image(employee.path_to_directory_of_my_task/f'{col}_ECFD.png')
 		
-		for x,y in [('t_50 from trigger (s)','Amplitude (V)'),('Time over noise (s)','Amplitude (V)')]:
+		for x,y in [('t_50 from trigger (s)','Amplitude (V)'),('Time over noise (s)','Amplitude (V)'),('t_50 (s)','Amplitude (V)')]:
 			logging.info(f'Plotting {x} vs {y}...')
 			fig = px.scatter(
 				title = f'{y[:-4]} vs {x[:-4].lower()} distribution<br><sup>{bureaucrat.run_name}</sup>',
