@@ -6,6 +6,8 @@ from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/Senger
 import utils
 import logging
 import subprocess
+from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://github.com/SengerM/huge_dataframe
+import pandas
 
 def run_command_in_corry_docker_container(command:str):
 	CONTAINER_ID = '612536858d53' # To obtain this, run `docker ps` from outside the container.
@@ -165,6 +167,85 @@ def corry_align_telescope(bureaucrat:RunBureaucrat, force:bool=False):
 				result.check_returncode()
 		logging.info(f'Telescope alignment was completed for all raw files in run {bureaucrat.run_name}!')
 
+def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, force:bool=False):
+	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/03_reconstruct_tracks')
+	
+	TASK_NAME = 'corry_reconstruct_tracks_with_telescope'
+	
+	if force==False and bureaucrat.was_task_run_successfully(TASK_NAME):
+		logging.info(f'Found an already successfull execution of {TASK_NAME} within {bureaucrat.run_name}, will not do anything.')
+		return
+	
+	bureaucrat.check_these_tasks_were_run_successfully(['corry_mask_noisy_pixels','corry_align_telescope'])
+	
+	with bureaucrat.handle_task(TASK_NAME) as employee:
+		for path_to_raw_file in (bureaucrat.path_to_run_directory/'raw').iterdir():
+			logging.info(f'Creating corry config files for raw file {path_to_raw_file.name}...')
+			
+			raw_file_name_without_extension = path_to_raw_file.parts[-1].replace(".raw","")
+			path_to_raw_file_within_docker_container = get_run_directory_within_corry_docker(bureaucrat)/f'raw/{path_to_raw_file.parts[-1]}'
+			output_directory_within_corry_docker = get_run_directory_within_corry_docker(bureaucrat)/f'{employee.task_name}/{raw_file_name_without_extension}/corry_output'
+			
+			path_to_where_to_save_the_config_files = employee.path_to_directory_of_my_task/raw_file_name_without_extension
+			path_to_where_to_save_the_config_files.mkdir()
+			
+			arguments_for_config_files = {
+				'01_reconstruct_tracks.conf': dict(
+					OUTPUT_DIRECTORY = f'"{output_directory_within_corry_docker}"',
+					GEOMETRY_FILE = f'"{output_directory_within_corry_docker.parent.parent.parent}/corry_align_telescope/{raw_file_name_without_extension}/corry_output/align-telescope-mille.geo"',
+					PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
+					NAME_OF_OUTPUT_FILE_WITH_TRACKS = f'"tracks.root"',
+				),
+				'tell_corry_docker_to_run_this.sh': dict(
+					WORKING_DIRECTORY = str(output_directory_within_corry_docker.parent),
+				),
+				'corry_tracks_root2csv.py': dict(
+					PATH_TO_TRACKSdotROOT_FILE = f"'{output_directory_within_corry_docker}/tracks.root'",
+				),
+			}
+			
+			for fname in arguments_for_config_files:
+				replace_arguments_in_file_template(
+					file_template = TEMPLATE_FILES_DIRECTORY/f'{fname}.template',
+					output_file = path_to_where_to_save_the_config_files/fname,
+					arguments = arguments_for_config_files[fname],
+				)
+			
+			# Make the scripts executable for docker:
+			for fname in path_to_where_to_save_the_config_files.iterdir():
+				if fname.suffix == '.sh':
+					subprocess.run(['chmod','+x',str(fname)])
+		logging.info('Corry config files were created for all raw files.')
+		
+		logging.info('Will now run the corry container on each raw file.')
+		for p in employee.path_to_directory_of_my_task.iterdir():
+			if p.is_dir() and p.name[:3] == 'run':
+				logging.info(f'Running corry docker on {p}...')
+				result = run_command_in_corry_docker_container(get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh')
+				result.check_returncode()
+				logging.info(f'Corry docker on {p} finished successfully reconstructing the tracks!')
+				
+				logging.info(f'Converting the CSV file into an SQLite file on {p}...')
+				dtype = dict(
+					n_event = int,
+					n_track = int,
+					is_fitted = bool,
+					chi2 = float,
+					ndof = float,
+					Ax = float,
+					Ay = float,
+					Az = float,
+					Bx = float,
+					By = float,
+					Bz = float,
+				)
+				with SQLiteDataFrameDumper(p/'tracks.sqlite', dump_after_n_appends=1e3) as tracks_dumper:
+					for df in pandas.read_csv(p/'tracks.csv', chunksize=1111, index_col=['n_event','n_track']):
+						tracks_dumper.append(df)
+				logging.info('CSV to SQLite file conversion successful, CSV file will be removed.')
+				(p/'tracks.csv').unlink()
+		logging.info('Tracks were reconstructed for all raw files!')
+
 if __name__ == '__main__':
 	import sys
 	
@@ -175,7 +256,7 @@ if __name__ == '__main__':
 		datefmt = '%Y-%m-%d %H:%M:%S',
 	)
 	
-	corry_mask_noisy_pixels(
+	corry_reconstruct_tracks_with_telescope(
 		RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/230614_June/analysis/batch_2_200V')),
 		force = False,
 	)
