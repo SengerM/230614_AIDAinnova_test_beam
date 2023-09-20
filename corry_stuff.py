@@ -240,14 +240,15 @@ def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, force:bool
 					Bz = float,
 				)
 				with SQLiteDataFrameDumper(p/'tracks.sqlite', dump_after_n_appends=1e3) as tracks_dumper:
-					for df in pandas.read_csv(p/'tracks.csv', chunksize=1111, index_col=['n_event','n_track']):
+					for df in pandas.read_csv(p/output_directory_within_corry_docker.name/'tracks.csv', chunksize=1111, index_col=['n_event','n_track']):
 						tracks_dumper.append(df)
 				logging.info('CSV to SQLite file conversion successful, CSV file will be removed.')
-				(p/'tracks.csv').unlink()
+				(p/output_directory_within_corry_docker.name/'tracks.csv').unlink()
 		logging.info('Tracks were reconstructed for all raw files!')
 
 if __name__ == '__main__':
 	import sys
+	import argparse
 	
 	logging.basicConfig(
 		stream = sys.stderr, 
@@ -256,7 +257,34 @@ if __name__ == '__main__':
 		datefmt = '%Y-%m-%d %H:%M:%S',
 	)
 	
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--dir',
+		metavar = 'path', 
+		help = 'Path to the base measurement directory.',
+		required = True,
+		dest = 'directory',
+		type = str,
+	)
+	parser.add_argument(
+		'--force',
+		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
+		required = False,
+		dest = 'force',
+		action = 'store_true'
+	)
+	args = parser.parse_args()
+	
+	bureaucrat = RunBureaucrat(Path(args.directory))
+	
+	corry_mask_noisy_pixels(
+		bureaucrat = bureaucrat,
+		force = args.force,
+	)
+	corry_align_telescope(
+		bureaucrat = bureaucrat,
+		force = args.force,
+	)
 	corry_reconstruct_tracks_with_telescope(
-		RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/230614_June/analysis/batch_2_200V')),
-		force = False,
+		bureaucrat = bureaucrat,
+		force = args.force,
 	)
