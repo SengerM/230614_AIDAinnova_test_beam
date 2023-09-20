@@ -29,7 +29,7 @@ def get_run_directory_within_corry_docker(bureaucrat:RunBureaucrat):
 	return Path(f'/data/{utils.which_test_beam_campaign(bureaucrat)}/analysis/{bureaucrat.run_name}')
 
 def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, force:bool=False):
-	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_machinery/01_mask_noisy_pixels')
+	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/01_mask_noisy_pixels')
 	
 	TASK_NAME = 'corry_mask_noisy_pixels'
 	
