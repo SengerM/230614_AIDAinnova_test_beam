@@ -1,4 +1,7 @@
 #!/bin/bash
+
+set -e
+
 cd ASD(WORKING_DIRECTORY)DSA &&
 
 corry -c 01_reconstruct_tracks.conf &&
