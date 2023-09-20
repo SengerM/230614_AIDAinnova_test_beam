@@ -1,0 +1,31 @@
+[Corryvreckan]
+output_directory = ASD(OUTPUT_DIRECTORY)DSA
+log_level = "INFO"
+
+detectors_file = ASD(GEOMETRY_FILE)DSA
+detectors_file_updated = ASD(UPDATED_GEOMETRY_FILE)DSA
+histogram_file = "02_prealign-telescope.root"
+
+number_of_events=16000
+
+[EventLoaderEUDAQ2]
+name = "MIMOSA26_0"
+file_name = ASD(PATH_TO_RAW_FILE)DSA
+sync_by_event = true
+ignore_bore = false
+
+[EventLoaderEUDAQ2]
+type = "mimosa26"
+file_name = ASD(PATH_TO_RAW_FILE)DSA
+sync_by_event = true
+discard_raw_events = "MIMOSA26_0"
+
+[ClusteringSpatial]
+type = "Mimosa26"
+
+[Correlations]
+type = "Mimosa26"
+
+[Prealignment]
+method = maximum
+type = "Mimosa26"

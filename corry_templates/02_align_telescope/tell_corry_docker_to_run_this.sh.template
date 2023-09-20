@@ -1,0 +1,14 @@
+#!/bin/bash
+cd ASD(WORKING_DIRECTORY)DSA &&
+
+corry -c 01_prealign-telescope.conf &&
+
+# Iterative process:
+corry -c 02_align-telescope.conf -o AlignmentTrackChi2.align_orientation=false &&
+corry -c 02_align-telescope.conf -o detectors_file=ASD(GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS)DSA -o Tracking4D.spatial_cut_abs=200um,200um -o AlignmentTrackChi2.max_track_chi2ndof=20 &&
+corry -c 02_align-telescope.conf -o detectors_file=ASD(GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS)DSA -o Tracking4D.spatial_cut_abs=100um,100um -o AlignmentTrackChi2.max_track_chi2ndof=10 -o Tracking4D.min_hits_on_track=5 &&
+
+# Final alignment:
+corry -c 03_align-telescope-mille.conf &&
+
+corry -c 04_check-alignment-telescope.conf
