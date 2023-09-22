@@ -10,6 +10,8 @@ from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://githu
 import pandas
 
 def run_command_in_corry_docker_container(command:str):
+	"""Runs a command inside the 'corry docker container'. The container
+	id is hardcoded in the function."""
 	CONTAINER_ID = '612536858d53' # To obtain this, run `docker ps` from outside the container.
 	return subprocess.run(['docker','exec','-it',CONTAINER_ID,command])
 
@@ -28,9 +30,13 @@ def replace_arguments_in_file_template(file_template:Path, output_file:Path, arg
 				print(line, file=ofile, end='')
 
 def get_run_directory_within_corry_docker(bureaucrat:RunBureaucrat):
+	"""Get the absolute path of the run directory within the corry docker
+	container."""
 	return Path(f'/data/{utils.which_test_beam_campaign(bureaucrat)}/analysis/{bureaucrat.run_name}')
 
 def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, force:bool=False):
+	"""Runs the routine to mask the noisy pixels using corryvreckan on
+	all the raw files of the run pointed to by `bureaucrat`."""
 	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/01_mask_noisy_pixels')
 	
 	TASK_NAME = 'corry_mask_noisy_pixels'
@@ -84,6 +90,8 @@ def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, force:bool=False):
 		logging.info('All noisy pixels masks were completed!')
 
 def corry_align_telescope(bureaucrat:RunBureaucrat, force:bool=False):
+	"""Runs the routine to align the telescope using corryvreckan on
+	all the raw files of the run pointed to by `bureaucrat`."""
 	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/02_align_telescope')
 	
 	TASK_NAME = 'corry_align_telescope'
@@ -168,6 +176,10 @@ def corry_align_telescope(bureaucrat:RunBureaucrat, force:bool=False):
 		logging.info(f'Telescope alignment was completed for all raw files in run {bureaucrat.run_name}!')
 
 def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, force:bool=False):
+	"""Runs the routine to reconstruct the tracks using corryvreckan on
+	all the raw files of the run pointed to by `bureaucrat`. Additionally,
+	it creates an SQLite file with the tracks info which is easy to read,
+	as well as the ROOT file produced by corry."""
 	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/03_reconstruct_tracks')
 	
 	TASK_NAME = 'corry_reconstruct_tracks_with_telescope'
@@ -266,10 +278,31 @@ if __name__ == '__main__':
 		type = str,
 	)
 	parser.add_argument(
-		'--force',
+		'--force_all',
 		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
 		required = False,
-		dest = 'force',
+		dest = 'force_all',
+		action = 'store_true'
+	)
+	parser.add_argument(
+		'--force_mask_noisy_pixels',
+		help = 'If this flag is passed, it will force the processing of "corry_mask_noisy_pixels" even if it was already done beforehand. Old data will be deleted.',
+		required = False,
+		dest = 'force_mask_noisy_pixels',
+		action = 'store_true'
+	)
+	parser.add_argument(
+		'--force_align_telescope',
+		help = 'If this flag is passed, it will force the processing of "corry_align_telescope" even if it was already done beforehand. Old data will be deleted.',
+		required = False,
+		dest = 'force_align_telescope',
+		action = 'store_true'
+	)
+	parser.add_argument(
+		'--force_reconstruct_tracks_with_telescope',
+		help = 'If this flag is passed, it will force the processing of "corry_reconstruct_tracks_with_telescope" even if it was already done beforehand. Old data will be deleted.',
+		required = False,
+		dest = 'force_reconstruct_tracks_with_telescope',
 		action = 'store_true'
 	)
 	args = parser.parse_args()
@@ -278,13 +311,13 @@ if __name__ == '__main__':
 	
 	corry_mask_noisy_pixels(
 		bureaucrat = bureaucrat,
-		force = args.force,
+		force = args.force_all or args.force_mask_noisy_pixels,
 	)
 	corry_align_telescope(
 		bureaucrat = bureaucrat,
-		force = args.force,
+		force = args.force_all or args.force_align_telescope,
 	)
 	corry_reconstruct_tracks_with_telescope(
 		bureaucrat = bureaucrat,
-		force = args.force,
+		force = args.force_all or args.force_reconstruct_tracks_with_telescope,
 	)
