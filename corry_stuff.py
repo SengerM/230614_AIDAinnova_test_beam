@@ -101,14 +101,14 @@ def corry_align_telescope(bureaucrat:RunBureaucrat, force:bool=False):
 			raw_file_name_without_extension = path_to_raw_file.parts[-1].replace(".raw","")
 			path_to_raw_file_within_docker_container = get_run_directory_within_corry_docker(bureaucrat)/f'raw/{path_to_raw_file.parts[-1]}'
 			output_directory_within_corry_docker = get_run_directory_within_corry_docker(bureaucrat)/f'{employee.task_name}/{raw_file_name_without_extension}/corry_output'
-			path_to_geometry_file_within_corry_docker_relative = '../../corry_geometry_for_this_batch.geo'
 			
 			path_to_where_to_save_the_config_files = employee.path_to_directory_of_my_task/raw_file_name_without_extension
 			path_to_where_to_save_the_config_files.mkdir()
 			
 			# First of all, copy the geometry file adding the mask noisy pixels extra lines.
+			path_to_geometry_file_with_noisy_pixels_mask = path_to_where_to_save_the_config_files/'corry_geometry_for_this_batch_with_noisy_pixels_mask.geo'
 			with open(bureaucrat.path_to_run_directory/'corry_geometry_for_this_batch.geo', 'r') as ifile:
-				with open(path_to_where_to_save_the_config_files/'corry_geometry_for_this_batch_with_noisy_pixels_mask.geo', 'w') as ofile:
+				with open(path_to_geometry_file_with_noisy_pixels_mask, 'w') as ofile:
 					for line in ifile:
 						print(line, file=ofile, end='')
 						for n_mimosa in [0,1,2,3,4,5]:
@@ -119,7 +119,7 @@ def corry_align_telescope(bureaucrat:RunBureaucrat, force:bool=False):
 			arguments_for_config_files = {
 				'01_prealign-telescope.conf': dict(
 					OUTPUT_DIRECTORY = f'"{output_directory_within_corry_docker}"',
-					GEOMETRY_FILE = f'"{path_to_geometry_file_within_corry_docker_relative}"',
+					GEOMETRY_FILE = f'"{path_to_geometry_file_with_noisy_pixels_mask.name}"',
 					UPDATED_GEOMETRY_FILE = f'"{output_directory_within_corry_docker}/prealign-telescope.geo"',
 					PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
 				),
