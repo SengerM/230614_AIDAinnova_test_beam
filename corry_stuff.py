@@ -12,7 +12,7 @@ import pandas
 def run_command_in_corry_docker_container(command:str):
 	"""Runs a command inside the 'corry docker container'. The container
 	id is hardcoded in the function."""
-	CONTAINER_ID = '612536858d53' # To obtain this, run `docker ps` from outside the container.
+	CONTAINER_ID = '7b1746d87ff3' # To obtain this, run `docker ps` from outside the container.
 	return subprocess.run(['docker','exec','-it',CONTAINER_ID,command])
 
 def replace_arguments_in_file_template(file_template:Path, output_file:Path, arguments:dict):
