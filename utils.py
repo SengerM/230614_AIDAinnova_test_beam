@@ -136,5 +136,50 @@ def load_setup_configuration_info(bureaucrat:RunBureaucrat)->pandas.DataFrame:
 	
 	return signals_connections
 
+def select_by_multiindex(df:pandas.DataFrame, idx:pandas.MultiIndex)->pandas.DataFrame:
+	"""Given a DataFrame and a MultiIndex object, selects the entries
+	from the data frame matching the multi index. Example:
+	DataFrame:
+	```
+	       d
+	a b c   
+	1 9 4  1
+	2 8 2  4
+	3 7 5  2
+	4 6 4  5
+	5 5 6  3
+	6 4 5  6
+	7 3 7  4
+	8 2 6  7
+	9 1 8  5
+	```
+	MultiIndex:
+	```
+	MultiIndex([(1, 9),
+            (2, 8),
+            (3, 7),
+            (4, 6),
+            (9, 1)],
+           names=['a', 'b'])
+	```
+	Output:
+	```
+	       d
+	a b c   
+	1 9 4  1
+	2 8 2  4
+	3 7 5  2
+	4 6 4  5
+	9 1 8  5
+
+	```
+	"""
+	if not set(idx.names) <= set(df.index.names):
+		raise ValueError('Names in `idx` not present in `df.index`')
+	if not isinstance(df, pandas.DataFrame) or not isinstance(idx, pandas.MultiIndex):
+		raise TypeError('`df` or `idx` are of the wrong type.')
+	lvl = df.index.names.difference(idx.names)
+	return df[df.index.droplevel(lvl).isin(idx)]
+
 if __name__=='__main__':
 	load_setup_configuration_info(RunBureaucrat(Path('/home/msenger/June_test_beam_data/analysis/batch_3')))
