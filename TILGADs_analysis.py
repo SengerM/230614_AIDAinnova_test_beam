@@ -131,15 +131,60 @@ def plot_tracks_and_hits(bureaucrat:RunBureaucrat):
 		
 		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
 		
+		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
+		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
+		
+		logging.info('Plotting tracks and hits on DUT...')
 		fig = px.scatter(
 			tracks.reset_index(),
-			title = f'Tracks projected on the DUT<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.run_name}</sup>',
+			title = f'Tracks projected on the DUT<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
 			x = 'Px',
 			y = 'Py',
 			color = 'DUT_name_rowcol',
 			hover_data = ['n_run','n_event'],
+			labels = {
+				'Px': 'x (m)',
+				'Py': 'y (m)',
+			},
 		)
-		a
+		fig.update_yaxes(
+			scaleanchor = "x",
+			scaleratio = 1,
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
+			include_plotlyjs = 'cdn',
+		)
+		
+		logging.info('Doing 3D tracks plot...')
+		tracks_for_plotly = []
+		for AB in ['A','B']:
+			_ = tracks[[f'{AB}{coord}' for coord in ['x','y','z']]]
+			_.columns = ['x','y','z']
+			tracks_for_plotly.append(_)
+		tracks_for_plotly = pandas.concat(tracks_for_plotly)
+		tracks_for_plotly = tracks_for_plotly.join(tracks['DUT_name_rowcol'])
+		
+		fig = px.line_3d(
+			tracks_for_plotly.reset_index(drop=False).query('DUT_name_rowcol != "no hit"'),
+			title = f'Tracks<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
+			x = 'x',
+			y = 'y',
+			z = 'z',
+			color = 'DUT_name_rowcol',
+			line_group = 'n_event',
+			labels = {
+				'x': 'x (m)',
+				'y': 'y (m)',
+				'z': 'z (m)',
+			},
+		)
+		fig.update_layout(hovermode=False)
+		# ~ fig.layout.scene.camera.projection.type = "orthographic"
+		fig.write_html(
+			employee.path_to_directory_of_my_task/f'tracks_3D.html',
+			include_plotlyjs = 'cdn',
+		)
 
 if __name__ == '__main__':
 	import sys
@@ -166,4 +211,4 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
-	plot_DUT_distributions(bureaucrat)
+	plot_tracks_and_hits(bureaucrat)
