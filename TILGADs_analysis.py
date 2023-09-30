@@ -11,6 +11,11 @@ from corry_stuff import load_tracks_for_events_with_track_multiplicity_1
 from parse_waveforms import read_parsed_from_waveforms
 import json
 
+def load_analysis_config(bureaucrat:RunBureaucrat):
+	bureaucrat.check_these_tasks_were_run_successfully('TI_LGAD_analysis_setup')
+	with open(bureaucrat.path_to_run_directory/'analysis_configuration.json', 'r') as ifile:
+		return json.load(ifile)
+
 def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str):
 	"""Setup a directory structure to perform further analysis of a TI-LGAD
 	that is inside a batch pointed by `bureaucrat`. This should be the 
@@ -98,8 +103,7 @@ def plot_tracks_and_hits(bureaucrat:RunBureaucrat):
 	bureaucrat.check_these_tasks_were_run_successfully(['TI_LGAD_analysis_setup','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
 	
 	with bureaucrat.handle_task('plot_tracks_and_hits') as employee:
-		with open(bureaucrat.path_to_run_directory/'analysis_configuration.json', 'r') as ifile:
-			analysis_config = json.load(ifile)
+		analysis_config = load_analysis_config(bureaucrat)
 		
 		logging.info('Reading tracks data...')
 		tracks = load_tracks_for_events_with_track_multiplicity_1(bureaucrat)
@@ -186,6 +190,83 @@ def plot_tracks_and_hits(bureaucrat:RunBureaucrat):
 			include_plotlyjs = 'cdn',
 		)
 
+def translate_and_rotate_tracks(tracks:pandas.DataFrame, x_translation:float, y_translation:float, angle_rotation:float):
+	for xy,translation in {'x':x_translation,'y':y_translation}.items():
+			tracks[f'P{xy}'] += translation
+	r = (tracks['Px']**2 + tracks['Py']**2)**.5
+	phi = numpy.arctan2(tracks['Py'], tracks['Px'])
+	tracks['Px'], tracks['Py'] = r*numpy.cos(phi+angle_rotation), r*numpy.sin(phi+angle_rotation)
+	return tracks
+
+def preview_transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat):
+	bureaucrat.check_these_tasks_were_run_successfully(['TI_LGAD_analysis_setup','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
+	
+	with bureaucrat.handle_task('preview_transformation_for_centering_and_leveling') as employee:
+		analysis_config = load_analysis_config(bureaucrat)
+		
+		logging.info('Reading tracks data...')
+		tracks = load_tracks_for_events_with_track_multiplicity_1(bureaucrat)
+		
+		logging.info('Reading DUT hits...')
+		DUT_hits = read_parsed_from_waveforms(
+			bureaucrat = bureaucrat,
+			DUT_name = get_DUT_name(bureaucrat),
+			variables = [],
+			additional_SQL_selection = analysis_config['DUT_hit_selection_criterion_SQL_query'],
+		)
+		
+		setup_config = utils.load_setup_configuration_info(bureaucrat)
+		
+		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		
+		logging.info('Projecting tracks onto DUT...')
+		projected = utils.project_track_in_z(
+			A = tracks[[f'A{_}' for _ in ['x','y','z']]].to_numpy().T,
+			B = tracks[[f'B{_}' for _ in ['x','y','z']]].to_numpy().T,
+			z = analysis_config['DUT_z_position'],
+		).T
+		projected = pandas.DataFrame(
+			projected,
+			columns = ['Px','Py','Pz'],
+			index = tracks.index,
+		)
+		tracks = projected
+		
+		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
+		
+		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
+		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
+		
+		logging.info('Applying transformation to tracks to center and align DUT...')
+		tracks = translate_and_rotate_tracks(
+			tracks = tracks,
+			x_translation = analysis_config['transformation_for_centering_and_leveling']['x_translation'],
+			y_translation = analysis_config['transformation_for_centering_and_leveling']['y_translation'],
+			angle_rotation = analysis_config['transformation_for_centering_and_leveling']['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		logging.info('Plotting tracks and hits on DUT...')
+		fig = px.scatter(
+			tracks.reset_index(),
+			title = f'Tracks projected on the DUT after transformation<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
+			x = 'Px',
+			y = 'Py',
+			color = 'DUT_name_rowcol',
+			hover_data = ['n_run','n_event'],
+			labels = {
+				'Px': 'x (m)',
+				'Py': 'y (m)',
+			},
+		)
+		fig.update_yaxes(
+			scaleanchor = "x",
+			scaleratio = 1,
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
+			include_plotlyjs = 'cdn',
+		)
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -211,4 +292,4 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
-	plot_tracks_and_hits(bureaucrat)
+	preview_transformation_for_centering_and_leveling(bureaucrat)
