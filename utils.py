@@ -1,6 +1,7 @@
 import pandas
 from pathlib import Path
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
+import numpy
 
 def save_dataframe(df, name:str, location:Path):
 	for extension,method in {'pickle':df.to_pickle,'csv':df.to_csv}.items():
@@ -9,9 +10,9 @@ def save_dataframe(df, name:str, location:Path):
 def which_test_beam_campaign(bureaucrat:RunBureaucrat):
 	"""Returns the name of the test beam campaign, one of '230614_June' or
 	'230830_August'."""
-	if bureaucrat.path_to_run_directory.parent.parent.name == '230614_June':
+	if '230614_June' in str(bureaucrat.path_to_run_directory):
 		return '230614_June'
-	elif bureaucrat.path_to_run_directory.parent.parent.name == '230830_August':
+	elif '230830_August' in str(bureaucrat.path_to_run_directory):
 		return '230830_August'
 	else:
 		raise RuntimeError(f'Cannot determine test beam campaign of run {bureaucrat.run_name}')
@@ -180,6 +181,24 @@ def select_by_multiindex(df:pandas.DataFrame, idx:pandas.MultiIndex)->pandas.Dat
 		raise TypeError('`df` or `idx` are of the wrong type.')
 	lvl = df.index.names.difference(idx.names)
 	return df[df.index.droplevel(lvl).isin(idx)]
+
+def project_track_in_z(A:numpy.array, B:numpy.array, z:float):
+	"""Given two points in a (straight) track, A and B, finds the projection
+	at some given z.
+	
+	Arguments:
+	A, B: numpy.array
+		Two points along a track. Can be a collection of points from multiple
+		tracks, in this case the shape has to be (3,whatever...).
+	z: float
+		Value of z on which to project the tracks.
+	"""
+	def dot(a,b):
+		return numpy.sum(a*b, axis=0)
+	if A.shape != B.shape or A.shape[0] != 3:
+		raise ValueError('Either `A` or `B`, or both, is invalid.')
+	track_direction = (A-B)/(numpy.linalg.norm(A-B, axis=0))
+	return A + track_direction*(z-A[2])/dot(track_direction, numpy.tile(numpy.array([0,0,1]), (int(A.size/3),1)).T)
 
 if __name__=='__main__':
 	load_setup_configuration_info(RunBureaucrat(Path('/home/msenger/June_test_beam_data/analysis/batch_3')))
