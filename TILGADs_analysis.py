@@ -9,6 +9,7 @@ import numpy
 import plotly_utils
 from corry_stuff import load_tracks_for_events_with_track_multiplicity_1
 from parse_waveforms import read_parsed_from_waveforms
+import json
 
 def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str):
 	"""Setup a directory structure to perform further analysis of a TI-LGAD
@@ -58,7 +59,8 @@ def plot_DUT_distributions(bureaucrat:RunBureaucrat):
 			data = data.sample(n=MAXIMUM_NUMBER_OF_POINTS_TO_PLOT) # To limit the number of entries plotted.
 			data = data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
 			fig = px.ecdf(
-				data,
+				data.sort_values('DUT_name_rowcol'),
+				title = f'{variable} distribution<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
 				x = variable,
 				marginal = 'histogram',
 				color = 'DUT_name_rowcol',
@@ -81,7 +83,8 @@ def plot_DUT_distributions(bureaucrat:RunBureaucrat):
 			data = data.sample(n=MAXIMUM_NUMBER_OF_POINTS_TO_PLOT) # To limit the number of entries plotted.
 			data = data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
 			fig = px.scatter(
-				data,
+				data.sort_values('DUT_name_rowcol'),
+				title = f'{y} vs {x} scatter plot<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
 				x = x,
 				y = y,
 				color = 'DUT_name_rowcol',
@@ -91,8 +94,52 @@ def plot_DUT_distributions(bureaucrat:RunBureaucrat):
 				include_plotlyjs = 'cdn',
 			)
 
-# ~ def plot_tracks_and_hits(bureaucrat:RunBureaucrat):
-	# ~ bureaucrat.check_these_tasks_were_run_successfully
+def plot_tracks_and_hits(bureaucrat:RunBureaucrat):
+	bureaucrat.check_these_tasks_were_run_successfully(['TI_LGAD_analysis_setup','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
+	
+	with bureaucrat.handle_task('plot_tracks_and_hits') as employee:
+		with open(bureaucrat.path_to_run_directory/'analysis_configuration.json', 'r') as ifile:
+			analysis_config = json.load(ifile)
+		
+		logging.info('Reading tracks data...')
+		tracks = load_tracks_for_events_with_track_multiplicity_1(bureaucrat)
+		
+		logging.info('Reading DUT hits...')
+		DUT_hits = read_parsed_from_waveforms(
+			bureaucrat = bureaucrat,
+			DUT_name = get_DUT_name(bureaucrat),
+			variables = [],
+			additional_SQL_selection = analysis_config['DUT_hit_selection_criterion_SQL_query'],
+		)
+		
+		setup_config = utils.load_setup_configuration_info(bureaucrat)
+		
+		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		
+		logging.info('Projecting tracks onto DUT...')
+		projected = utils.project_track_in_z(
+			A = tracks[[f'A{_}' for _ in ['x','y','z']]].to_numpy().T,
+			B = tracks[[f'B{_}' for _ in ['x','y','z']]].to_numpy().T,
+			z = analysis_config['DUT_z_position'],
+		).T
+		projected = pandas.DataFrame(
+			projected,
+			columns = ['Px','Py','Pz'],
+			index = tracks.index,
+		)
+		tracks = tracks.join(projected)
+		
+		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
+		
+		fig = px.scatter(
+			tracks.reset_index(),
+			title = f'Tracks projected on the DUT<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.run_name}</sup>',
+			x = 'Px',
+			y = 'Py',
+			color = 'DUT_name_rowcol',
+			hover_data = ['n_run','n_event'],
+		)
+		a
 
 if __name__ == '__main__':
 	import sys
