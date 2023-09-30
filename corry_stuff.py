@@ -8,6 +8,8 @@ import logging
 import subprocess
 from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://github.com/SengerM/huge_dataframe
 import pandas
+import configparser
+import sqlite3
 
 def run_command_in_corry_docker_container(command:str):
 	"""Runs a command inside the 'corry docker container'. The container
@@ -258,6 +260,34 @@ def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, force:bool
 				(p/output_directory_within_corry_docker.name/'tracks.csv').unlink()
 		logging.info('Tracks were reconstructed for all raw files!')
 
+def load_tracks_for_events_with_track_multiplicity_1(bureaucrat):
+	bureaucrat.check_these_tasks_were_run_successfully('corry_reconstruct_tracks_with_telescope')
+	
+	tracks = []
+	for p in bureaucrat.path_to_directory_of_task('corry_reconstruct_tracks_with_telescope').iterdir():
+		if not p.is_dir():
+			continue
+		df = pandas.read_sql(
+			'SELECT * FROM dataframe_table GROUP BY n_event HAVING COUNT(n_track) = 1', # Read only events with track multiplicity 1.
+			con = sqlite3.connect(p/'tracks.sqlite'),
+		)
+		df['n_run'] = int(p.parts[-1].split('_')[0].replace('run',''))
+		df['n_event'] = df['n_event'] - 1 # Fix an offset that is present in the data, I think it has to do with the extra trigger sent by the TLU when the run starts, that was not sent to the CAENs.
+		df.set_index(['n_run','n_event','n_track'], inplace=True)
+		tracks.append(df)
+	tracks = pandas.concat(tracks)
+	
+	tracks[['Ax','Ay','Az','Bx','By']] *= 1e-3 # Convert millimeter to meter, it is more natural to work in SI units.
+	
+	# Check that the track multiplicity is indeed 1 for all events loaded:
+	n_tracks_in_event = tracks['is_fitted'].groupby(['n_run','n_event']).count()
+	n_tracks_in_event.name = 'n_tracks_in_event'
+	if set(n_tracks_in_event) != {1} or len(tracks) == 0:
+		raise RuntimeError(f'Failed to load tracks only from events with track multiplicity 1...')
+	
+	tracks.reset_index('n_track', drop=True, inplace=True)
+	return tracks
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -305,6 +335,13 @@ if __name__ == '__main__':
 		dest = 'force_reconstruct_tracks_with_telescope',
 		action = 'store_true'
 	)
+	parser.add_argument(
+		'--force_corry_efficiencies',
+		help = 'If this flag is passed, it will force the processing of "corry_efficiencies" even if it was already done beforehand. Old data will be deleted.',
+		required = False,
+		dest = 'force_corry_efficiencies',
+		action = 'store_true'
+	)
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
@@ -320,4 +357,8 @@ if __name__ == '__main__':
 	corry_reconstruct_tracks_with_telescope(
 		bureaucrat = bureaucrat,
 		force = args.force_all or args.force_reconstruct_tracks_with_telescope,
+	)
+	corry_efficiencies(
+		bureaucrat = bureaucrat,
+		force = args.force_all or args.force_corry_efficiencies,
 	)
