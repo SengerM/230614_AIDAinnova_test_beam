@@ -198,10 +198,10 @@ def translate_and_rotate_tracks(tracks:pandas.DataFrame, x_translation:float, y_
 	tracks['Px'], tracks['Py'] = r*numpy.cos(phi+angle_rotation), r*numpy.sin(phi+angle_rotation)
 	return tracks
 
-def preview_transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat):
+def transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat):
 	bureaucrat.check_these_tasks_were_run_successfully(['TI_LGAD_analysis_setup','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
 	
-	with bureaucrat.handle_task('preview_transformation_for_centering_and_leveling') as employee:
+	with bureaucrat.handle_task('transformation_for_centering_and_leveling') as employee:
 		analysis_config = load_analysis_config(bureaucrat)
 		
 		logging.info('Reading tracks data...')
@@ -266,6 +266,219 @@ def preview_transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat):
 			employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
 			include_plotlyjs = 'cdn',
 		)
+		
+		logging.info('Saving transformation parameters into a file...')
+		with open(employee.path_to_directory_of_my_task/'transformation_parameters.json', 'w') as ofile:
+			json.dump(analysis_config['transformation_for_centering_and_leveling'], ofile)
+
+def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float):
+	if set(tracks.index.names) != set(DUT_hits.names):
+		raise ValueError('The index levels of `tracks` and `DUT_hits` must be the same, they are not.')
+	if set(tracks.columns) != {'x','y'}:
+		raise ValueError('The columns of `tracks` must be "x" and "y"')
+	if project_on not in {'x','y'}:
+		raise ValueError('`project_on` must be "x" or "y"')
+	
+	total_tracks_count = distances*0
+	DUT_hits_count = distances*0
+	for i,d in enumerate(distances):
+		total_tracks_count[i] = len(tracks.query(f'{d-window_size/2}<={project_on} and {project_on}<{d+window_size/2}'))
+		DUT_hits_count[i] = len(utils.select_by_multiindex(tracks, DUT_hits).query(f'{d-window_size/2}<={project_on} and {project_on}<{d+window_size/2}'))
+	return DUT_hits_count/total_tracks_count
+
+def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float, n_bootstraps:int=99, confidence_level:float=.68):
+	original_efficiency = efficiency_vs_1D_distance_rolling(
+		tracks = tracks,
+		DUT_hits = DUT_hits,
+		project_on = project_on,
+		distances = distances,
+		window_size = window_size,
+	)
+	replicas = []
+	for n_bootstrap in range(n_bootstraps):
+		efficiency = efficiency_vs_1D_distance_rolling(
+			tracks = tracks.sample(frac=1, replace=True),
+			DUT_hits = DUT_hits,
+			project_on = project_on,
+			distances = distances,
+			window_size = window_size,
+		)
+		replicas.append(efficiency)
+	replicas = numpy.array(replicas)
+	value = numpy.quantile(replicas, q=.5, axis=0)
+	error_up = numpy.quantile(replicas, q=.5+confidence_level/2, axis=0) - value
+	error_down = value - numpy.quantile(replicas, q=.5-confidence_level/2, axis=0)
+	
+	try:
+		error_up[value==0] = sorted(set(error_up))[1]
+	except Exception:
+		pass
+	try:
+		error_down[value==1] = sorted(set(error_down))[1]
+	except Exception:
+		pass
+	
+	return error_down, error_up
+
+def efficiency_vs_distance_calculation(bureaucrat:RunBureaucrat):
+	bureaucrat.check_these_tasks_were_run_successfully(['corry_reconstruct_tracks_with_telescope','batch_info','parse_waveforms','transformation_for_centering_and_leveling'])
+	
+	with bureaucrat.handle_task('efficiency_vs_distance_calculation') as employee:
+		analysis_config = load_analysis_config(bureaucrat)
+		
+		logging.info('Reading tracks data...')
+		tracks = load_tracks_for_events_with_track_multiplicity_1(bureaucrat)
+		
+		logging.info('Reading DUT hits...')
+		DUT_hits = read_parsed_from_waveforms(
+			bureaucrat = bureaucrat,
+			DUT_name = get_DUT_name(bureaucrat),
+			variables = [],
+			additional_SQL_selection = analysis_config['DUT_hit_selection_criterion_SQL_query'],
+		)
+		
+		setup_config = utils.load_setup_configuration_info(bureaucrat)
+		
+		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['DUT_name_rowcol','row','col']])
+		
+		logging.info('Projecting tracks onto DUT...')
+		projected = utils.project_track_in_z(
+			A = tracks[[f'A{_}' for _ in ['x','y','z']]].to_numpy().T,
+			B = tracks[[f'B{_}' for _ in ['x','y','z']]].to_numpy().T,
+			z = analysis_config['DUT_z_position'],
+		).T
+		projected = pandas.DataFrame(
+			projected,
+			columns = ['Px','Py','Pz'],
+			index = tracks.index,
+		)
+		tracks = projected
+		
+		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
+		
+		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
+		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
+		
+		logging.info('Applying transformation to tracks to center and align DUT...')
+		with open(bureaucrat.path_to_directory_of_task('transformation_for_centering_and_leveling')/'transformation_parameters.json', 'r') as ifile:
+			transformation_parameters = json.load(ifile)
+		tracks = translate_and_rotate_tracks(
+			tracks = tracks,
+			x_translation = transformation_parameters['x_translation'],
+			y_translation = transformation_parameters['y_translation'],
+			angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		# Now we begin with new stuff...
+		for efficiency_analysis_config in analysis_config['efficiency_calculations']:
+			subrun = employee.create_subrun(subrun_name=efficiency_analysis_config['analysis_name'])
+			logging.info(f'Starting with analysis {subrun.run_name}')
+			with subrun.handle_task('efficiency_vs_distance_calculation') as employee_2:
+				logging.info('Saving analysis config in json file...')
+				with open(employee_2.path_to_directory_of_my_task/'efficiency_analysis_config.json','w') as ofile:
+					json.dump(efficiency_analysis_config, ofile)
+				
+				xmin = efficiency_analysis_config['ROI']['x_min']
+				xmax = efficiency_analysis_config['ROI']['x_max']
+				ymin = efficiency_analysis_config['ROI']['y_min']
+				ymax = efficiency_analysis_config['ROI']['y_max']
+				tracks_for_efficiency_calculation = tracks.query(f'{xmin}<Px and Px<{xmax} and {ymin}<Py and Py<{ymax}')
+				tracks_for_efficiency_calculation = tracks_for_efficiency_calculation.reset_index(['n_CAEN','CAEN_n_channel'], drop=True)
+				
+				logging.info('Plotting tracks and hits on DUT...')
+				fig = px.scatter(
+					tracks_for_efficiency_calculation.reset_index(),
+					title = f'Tracks projected on the DUT after transformation<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}/{employee_2.run_name}</sup>',
+					x = 'Px',
+					y = 'Py',
+					color = 'DUT_name_rowcol',
+					hover_data = ['n_run','n_event'],
+					labels = {
+						'Px': 'x (m)',
+						'Py': 'y (m)',
+					},
+				)
+				fig.add_shape(
+					type = "rect",
+					x0 = xmin, 
+					y0 = ymin, 
+					x1 = xmax, 
+					y1 = ymax,
+					line=dict(color="black"),
+				)
+				fig.update_yaxes(
+					scaleanchor = "x",
+					scaleratio = 1,
+				)
+				fig.write_html(
+					employee_2.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
+					include_plotlyjs = 'cdn',
+				)
+				
+				logging.info('Calculating efficiency vs distance...')
+				
+				distance_axis = numpy.linspace(
+					tracks_for_efficiency_calculation[f'P{efficiency_analysis_config["project_on"]}'].min(),
+					tracks_for_efficiency_calculation[f'P{efficiency_analysis_config["project_on"]}'].max(),
+					efficiency_analysis_config['n_distance_points'],
+				)
+				efficiency_data = []
+				for leftright in ['left','right','both']:
+					if leftright in {'left','right'}:
+						pixel_rowcol = efficiency_analysis_config[f'{leftright}_pixel_rowcol']
+						DUT_hits_for_efficiency = DUT_hits.query(f'row=={pixel_rowcol[0]} and col=={pixel_rowcol[1]}')
+					elif leftright == 'both':
+						pixel_rowcol = [efficiency_analysis_config[f'{_}_pixel_rowcol'] for _ in {'left','right'}]
+						DUT_hits_for_efficiency = DUT_hits.query(f'(row=={pixel_rowcol[0][0]} and col=={pixel_rowcol[0][1]}) or (row=={pixel_rowcol[1][0]} and col=={pixel_rowcol[1][1]})')
+					else:
+						raise RuntimeError('Check this, should never happen!')
+					
+					efficiency_calculation_args = dict(
+						tracks = tracks_for_efficiency_calculation.rename(columns={'Px':'x', 'Py':'y'})[['x','y']],
+						DUT_hits = DUT_hits_for_efficiency.reset_index(['n_CAEN','CAEN_n_channel'], drop=True).index,
+						project_on = efficiency_analysis_config['project_on'],
+						distances = distance_axis,
+						window_size = efficiency_analysis_config['rolling_window_size'],
+					)
+					error_minus, error_plus = efficiency_vs_1D_distance_rolling_error_estimation(
+						**efficiency_calculation_args,
+						n_bootstraps = 33,
+					)
+					df = pandas.DataFrame(
+						{
+							'Distance (m)': distance_axis,
+							'Efficiency': efficiency_vs_1D_distance_rolling(**efficiency_calculation_args),
+							'Efficiency error_-': error_minus,
+							'Efficiency error_+': error_plus,
+						}
+					)
+					df['Pixel'] = leftright
+					efficiency_data.append(df)
+				efficiency_data = pandas.concat(efficiency_data)
+				efficiency_data.set_index(['Pixel','Distance (m)'], inplace=True)
+				
+				utils.save_dataframe(
+					df = efficiency_data,
+					name = 'efficiency_vs_distance',
+					location = employee_2.path_to_directory_of_my_task,
+				)
+				
+				logging.info('Plotting efficiency vs distance...')
+				fig = plotly_utils.line(
+					data_frame = efficiency_data.sort_index().reset_index(drop=False),
+					title = f'Tracks projected on the DUT after transformation<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}/{employee_2.run_name}</sup>',
+					x = 'Distance (m)',
+					y = 'Efficiency',
+					error_y = 'Efficiency error_+',
+					error_y_minus = 'Efficiency error_-',
+					color = 'Pixel',
+					error_y_mode = 'bands',
+				)
+				fig.write_html(
+					employee_2.path_to_directory_of_my_task/'efficiency_vs_distance.html',
+					include_plotlyjs = 'cdn',
+				)
+		a
 
 if __name__ == '__main__':
 	import sys
@@ -292,4 +505,4 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
-	preview_transformation_for_centering_and_leveling(bureaucrat)
+	efficiency_vs_distance_calculation(bureaucrat)
