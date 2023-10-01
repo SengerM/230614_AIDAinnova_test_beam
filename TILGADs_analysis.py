@@ -499,7 +499,7 @@ def efficiency_vs_distance_calculation(bureaucrat:RunBureaucrat):
 				logging.info('Plotting efficiency vs distance...')
 				fig = plotly_utils.line(
 					data_frame = efficiency_data.sort_index().reset_index(drop=False),
-					title = f'Tracks projected on the DUT after transformation<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}/{employee_2.run_name}</sup>',
+					title = f'Efficiency vs distance<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}/{employee_2.run_name}</sup>',
 					x = 'Distance (m)',
 					y = 'Efficiency',
 					error_y = 'Efficiency error_+',
