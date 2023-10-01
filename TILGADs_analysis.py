@@ -10,6 +10,7 @@ import plotly_utils
 from corry_stuff import load_tracks_for_events_with_track_multiplicity_1
 from parse_waveforms import read_parsed_from_waveforms
 import json
+import warnings
 
 def load_analysis_config(bureaucrat:RunBureaucrat):
 	bureaucrat.check_these_tasks_were_run_successfully('TI_LGAD_analysis_setup')
@@ -31,6 +32,36 @@ def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str):
 		TILGAD_bureaucrat = employee.create_subrun(DUT_name)
 		for task_name in ['corry_reconstruct_tracks_with_telescope','parse_waveforms','batch_info']:
 			(TILGAD_bureaucrat.path_to_run_directory/task_name).symlink_to(Path('../../../'+task_name))
+		
+		# Create analysis configuration file to be filled up:
+		with open(TILGAD_bureaucrat.path_to_run_directory/'analysis_configuration.json','w') as ofile:
+			file_content = '''{
+	"DUT_hit_selection_criterion_SQL_query": null,
+	"DUT_z_position": null,
+	"transformation_for_centering_and_leveling": {
+		"x_translation": null,
+		"y_translation": null,
+		"rotation_around_z_deg": null
+	},
+	"efficiency_calculations": [
+		{
+			"analysis_name": null,
+			"project_on": null,
+			"ROI": {
+				"x_min": null,
+				"y_min": null,
+				"x_max": null,
+				"y_max": null
+			},
+			"left_pixel_rowcol": [null,null],
+			"right_pixel_rowcol": [null,null],
+			"rolling_window_size": null,
+			"n_distance_points": null
+		}
+	]
+}
+'''
+			ofile.writelines(file_content)
 		
 		with TILGAD_bureaucrat.handle_task('TI_LGAD_analysis_setup'):
 			pass
@@ -305,18 +336,18 @@ def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, 
 		)
 		replicas.append(efficiency)
 	replicas = numpy.array(replicas)
-	value = numpy.quantile(replicas, q=.5, axis=0)
-	error_up = numpy.quantile(replicas, q=.5+confidence_level/2, axis=0) - value
-	error_down = value - numpy.quantile(replicas, q=.5-confidence_level/2, axis=0)
+	value = numpy.quantile(replicas, q=.5, axis=0, method='interpolated_inverted_cdf')
+	error_up = numpy.quantile(replicas, q=.5+confidence_level/2, axis=0, method='interpolated_inverted_cdf') - value
+	error_down = value - numpy.quantile(replicas, q=.5-confidence_level/2, axis=0, method='interpolated_inverted_cdf')
 	
-	try:
-		error_up[value==0] = sorted(set(error_up))[1]
-	except Exception:
-		pass
-	try:
-		error_down[value==1] = sorted(set(error_down))[1]
-	except Exception:
-		pass
+	# ~ try:
+		# ~ error_up[value==0] = sorted(set(error_up))[1]
+	# ~ except Exception:
+		# ~ pass
+	# ~ try:
+		# ~ error_down[value==1] = sorted(set(error_down))[1]
+	# ~ except Exception:
+		# ~ pass
 	
 	return error_down, error_up
 
@@ -433,25 +464,27 @@ def efficiency_vs_distance_calculation(bureaucrat:RunBureaucrat):
 					else:
 						raise RuntimeError('Check this, should never happen!')
 					
-					efficiency_calculation_args = dict(
-						tracks = tracks_for_efficiency_calculation.rename(columns={'Px':'x', 'Py':'y'})[['x','y']],
-						DUT_hits = DUT_hits_for_efficiency.reset_index(['n_CAEN','CAEN_n_channel'], drop=True).index,
-						project_on = efficiency_analysis_config['project_on'],
-						distances = distance_axis,
-						window_size = efficiency_analysis_config['rolling_window_size'],
-					)
-					error_minus, error_plus = efficiency_vs_1D_distance_rolling_error_estimation(
-						**efficiency_calculation_args,
-						n_bootstraps = 33,
-					)
-					df = pandas.DataFrame(
-						{
-							'Distance (m)': distance_axis,
-							'Efficiency': efficiency_vs_1D_distance_rolling(**efficiency_calculation_args),
-							'Efficiency error_-': error_minus,
-							'Efficiency error_+': error_plus,
-						}
-					)
+					with warnings.catch_warnings():
+						warnings.simplefilter("ignore")
+						efficiency_calculation_args = dict(
+							tracks = tracks_for_efficiency_calculation.rename(columns={'Px':'x', 'Py':'y'})[['x','y']],
+							DUT_hits = DUT_hits_for_efficiency.reset_index(['n_CAEN','CAEN_n_channel'], drop=True).index,
+							project_on = efficiency_analysis_config['project_on'],
+							distances = distance_axis,
+							window_size = efficiency_analysis_config['rolling_window_size'],
+						)
+						error_minus, error_plus = efficiency_vs_1D_distance_rolling_error_estimation(
+							**efficiency_calculation_args,
+							n_bootstraps = 33,
+						)
+						df = pandas.DataFrame(
+							{
+								'Distance (m)': distance_axis,
+								'Efficiency': efficiency_vs_1D_distance_rolling(**efficiency_calculation_args),
+								'Efficiency error_-': error_minus,
+								'Efficiency error_+': error_plus,
+							}
+						)
 					df['Pixel'] = leftright
 					efficiency_data.append(df)
 				efficiency_data = pandas.concat(efficiency_data)
@@ -478,7 +511,6 @@ def efficiency_vs_distance_calculation(bureaucrat:RunBureaucrat):
 					employee_2.path_to_directory_of_my_task/'efficiency_vs_distance.html',
 					include_plotlyjs = 'cdn',
 				)
-		a
 
 if __name__ == '__main__':
 	import sys
@@ -502,7 +534,60 @@ if __name__ == '__main__':
 		dest = 'directory',
 		type = str,
 	)
+	parser.add_argument('--setup_analysis_for_DUT',
+		metavar = 'DUT_name', 
+		help = 'Name of the DUT name for which to setup a new analysis.',
+		required = False,
+		dest = 'setup_analysis_for_DUT',
+		type = str,
+		default = 'None',
+	)
+	parser.add_argument(
+		'--plot_DUT_distributions',
+		help = 'Pass this flag to run `plot_DUT_distributions`.',
+		required = False,
+		dest = 'plot_DUT_distributions',
+		action = 'store_true'
+	)
+	parser.add_argument(
+		'--plot_tracks_and_hits',
+		help = 'Pass this flag to run `plot_tracks_and_hits`.',
+		required = False,
+		dest = 'plot_tracks_and_hits',
+		action = 'store_true'
+	)
+	parser.add_argument(
+		'--transformation_for_centering_and_leveling',
+		help = 'Pass this flag to run `transformation_for_centering_and_leveling`.',
+		required = False,
+		dest = 'transformation_for_centering_and_leveling',
+		action = 'store_true'
+	)
+	parser.add_argument(
+		'--efficiency_vs_distance_calculation',
+		help = 'Pass this flag to run `efficiency_vs_distance_calculation`.',
+		required = False,
+		dest = 'efficiency_vs_distance_calculation',
+		action = 'store_true'
+	)
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
-	efficiency_vs_distance_calculation(bureaucrat)
+	
+	if bureaucrat.was_task_run_successfully('TI_LGAD_analysis_setup'):
+		if args.plot_DUT_distributions == True:
+			plot_DUT_distributions(bureaucrat)
+		if args.plot_tracks_and_hits == True:
+			plot_tracks_and_hits(bureaucrat)
+		if args.transformation_for_centering_and_leveling == True:
+			transformation_for_centering_and_leveling(bureaucrat)
+		if args.efficiency_vs_distance_calculation == True:
+			efficiency_vs_distance_calculation(bureaucrat)
+	elif args.setup_analysis_for_DUT != 'None':
+		setup_TI_LGAD_analysis(
+			bureaucrat, 
+			DUT_name = args.setup_analysis_for_DUT,
+		)
+		logging.info(f'A new analysis for DUT named "{args.setup_analysis_for_DUT}" was created inside {bureaucrat.path_to_run_directory}')
+	else:
+		raise RuntimeError(f"Don't know what to do in {bureaucrat.path_to_run_directory}... Please read script help or source code.")
