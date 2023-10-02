@@ -11,11 +11,10 @@ import pandas
 import configparser
 import sqlite3
 
-def run_command_in_corry_docker_container(command:str):
+def run_command_in_corry_docker_container(command:str, container_id:str):
 	"""Runs a command inside the 'corry docker container'. The container
 	id is hardcoded in the function."""
-	CONTAINER_ID = '7b1746d87ff3' # To obtain this, run `docker ps` from outside the container.
-	return subprocess.run(['docker','exec','-it',CONTAINER_ID,command])
+	return subprocess.run(['docker','exec','-it',container_id,command])
 
 def replace_arguments_in_file_template(file_template:Path, output_file:Path, arguments:dict):
 	"""Given a file template with arguments denoted by 'ASD(argument_name)DSA',
@@ -36,7 +35,7 @@ def get_run_directory_within_corry_docker(bureaucrat:RunBureaucrat):
 	container."""
 	return Path(f'/data/{utils.which_test_beam_campaign(bureaucrat)}/analysis/{bureaucrat.run_name}')
 
-def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, force:bool=False):
+def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False):
 	"""Runs the routine to mask the noisy pixels using corryvreckan on
 	all the raw files of the run pointed to by `bureaucrat`."""
 	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/01_mask_noisy_pixels')
@@ -87,11 +86,14 @@ def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, force:bool=False):
 		for p in employee.path_to_directory_of_my_task.iterdir():
 			if p.is_dir() and p.name[:3] == 'run':
 				logging.info(f'Running corry docker on {p}...')
-				result = run_command_in_corry_docker_container(get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh')
+				result = run_command_in_corry_docker_container(
+					command = get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh',
+					container_id = corry_container_id,
+				)
 				result.check_returncode()
 		logging.info('All noisy pixels masks were completed!')
 
-def corry_align_telescope(bureaucrat:RunBureaucrat, force:bool=False):
+def corry_align_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False):
 	"""Runs the routine to align the telescope using corryvreckan on
 	all the raw files of the run pointed to by `bureaucrat`."""
 	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/02_align_telescope')
@@ -173,11 +175,14 @@ def corry_align_telescope(bureaucrat:RunBureaucrat, force:bool=False):
 		for p in employee.path_to_directory_of_my_task.iterdir():
 			if p.is_dir() and p.name[:3] == 'run':
 				logging.info(f'Running corry docker on {p}...')
-				result = run_command_in_corry_docker_container(get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh')
+				result = run_command_in_corry_docker_container(
+					command = get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh',
+					container_id = corry_container_id,
+				)
 				result.check_returncode()
 		logging.info(f'Telescope alignment was completed for all raw files in run {bureaucrat.run_name}!')
 
-def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, force:bool=False):
+def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False):
 	"""Runs the routine to reconstruct the tracks using corryvreckan on
 	all the raw files of the run pointed to by `bureaucrat`. Additionally,
 	it creates an SQLite file with the tracks info which is easy to read,
@@ -235,7 +240,10 @@ def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, force:bool
 		for p in employee.path_to_directory_of_my_task.iterdir():
 			if p.is_dir() and p.name[:3] == 'run':
 				logging.info(f'Running corry docker on {p}...')
-				result = run_command_in_corry_docker_container(get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh')
+				result = run_command_in_corry_docker_container(
+					command = get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh',
+					container_id = corry_container_id,
+				)
 				result.check_returncode()
 				logging.info(f'Corry docker on {p} finished successfully reconstructing the tracks!')
 				
@@ -307,6 +315,13 @@ if __name__ == '__main__':
 		dest = 'directory',
 		type = str,
 	)
+	parser.add_argument('--container_id',
+		metavar = 'id', 
+		help = 'Id of the docker container running `Jordis corry docker`. Once the container is already running, you can get the id with `docker ps`.',
+		required = True,
+		dest = 'container_id',
+		type = str,
+	)
 	parser.add_argument(
 		'--force_all',
 		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
@@ -348,17 +363,16 @@ if __name__ == '__main__':
 	
 	corry_mask_noisy_pixels(
 		bureaucrat = bureaucrat,
+		corry_container_id = args.container_id,
 		force = args.force_all or args.force_mask_noisy_pixels,
 	)
 	corry_align_telescope(
 		bureaucrat = bureaucrat,
+		corry_container_id = args.container_id,
 		force = args.force_all or args.force_align_telescope,
 	)
 	corry_reconstruct_tracks_with_telescope(
 		bureaucrat = bureaucrat,
+		corry_container_id = args.container_id,
 		force = args.force_all or args.force_reconstruct_tracks_with_telescope,
-	)
-	corry_efficiencies(
-		bureaucrat = bureaucrat,
-		force = args.force_all or args.force_corry_efficiencies,
 	)

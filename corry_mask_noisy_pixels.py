@@ -23,6 +23,13 @@ if __name__ == '__main__':
 		dest = 'directory',
 		type = str,
 	)
+	parser.add_argument('--container_id',
+		metavar = 'id', 
+		help = 'Id of the docker container running `Jordis corry docker`. Once the container is already running, you can get the id with `docker ps`.',
+		required = True,
+		dest = 'container_id',
+		type = str,
+	)
 	parser.add_argument(
 		'--force',
 		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
@@ -34,5 +41,6 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	corry_mask_noisy_pixels(
 		RunBureaucrat(Path(args.directory)),
+		corry_container_id = args.container_id,
 		force = args.force,
 	)
