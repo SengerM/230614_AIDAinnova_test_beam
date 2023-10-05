@@ -36,7 +36,7 @@ def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str):
 		# Create analysis configuration file to be filled up:
 		with open(TILGAD_bureaucrat.path_to_run_directory/'analysis_configuration.json','w') as ofile:
 			file_content = '''{
-	"DUT_hit_selection_criterion_SQL_query": null,
+	"DUT_hit_selection_criterion_SQL_query": "100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<X",
 	"DUT_z_position": null,
 	"transformation_for_centering_and_leveling": {
 		"x_translation": null,
@@ -119,11 +119,12 @@ def plot_DUT_distributions(bureaucrat:RunBureaucrat):
 			data = data.sample(n=MAXIMUM_NUMBER_OF_POINTS_TO_PLOT) # To limit the number of entries plotted.
 			data = data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
 			fig = px.scatter(
-				data.sort_values('DUT_name_rowcol'),
+				data.sort_values('DUT_name_rowcol').reset_index(drop=False),
 				title = f'{y} vs {x} scatter plot<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
 				x = x,
 				y = y,
 				color = 'DUT_name_rowcol',
+				hover_data = ['n_run','n_event'],
 			)
 			fig.write_html(
 				save_scatter_plots_here/f'{y}_vs_{x}_scatter.html',
