@@ -231,7 +231,7 @@ def translate_and_rotate_tracks(tracks:pandas.DataFrame, x_translation:float, y_
 	tracks['Px'], tracks['Py'] = r*numpy.cos(phi+angle_rotation), r*numpy.sin(phi+angle_rotation)
 	return tracks
 
-def transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat):
+def transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat, draw_square:bool=False):
 	bureaucrat.check_these_tasks_were_run_successfully(['TI_LGAD_analysis_setup','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
 	
 	with bureaucrat.handle_task('transformation_for_centering_and_leveling') as employee:
@@ -291,6 +291,16 @@ def transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat):
 				'Py': 'y (m)',
 			},
 		)
+		for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
+			method(0)
+		if draw_square:
+			fig.add_shape(
+				type = "rect",
+				x0 = -250e-6, 
+				y0 = -250e-6, 
+				x1 = 250e-6, 
+				y1 = 250e-6,
+			)
 		fig.update_yaxes(
 			scaleanchor = "x",
 			scaleratio = 1,
@@ -589,7 +599,7 @@ if __name__ == '__main__':
 		if args.plot_tracks_and_hits == True:
 			plot_tracks_and_hits(bureaucrat, do_3D_plot=args.enable_3D_tracks_plot)
 		if args.transformation_for_centering_and_leveling == True:
-			transformation_for_centering_and_leveling(bureaucrat)
+			transformation_for_centering_and_leveling(bureaucrat, draw_square=True)
 		if args.efficiency_vs_distance_calculation == True:
 			efficiency_vs_distance_calculation(bureaucrat)
 	elif args.setup_analysis_for_DUT != 'None':
