@@ -131,7 +131,7 @@ def plot_DUT_distributions(bureaucrat:RunBureaucrat):
 				include_plotlyjs = 'cdn',
 			)
 
-def plot_tracks_and_hits(bureaucrat:RunBureaucrat):
+def plot_tracks_and_hits(bureaucrat:RunBureaucrat, do_3D_plot:bool=True):
 	bureaucrat.check_these_tasks_were_run_successfully(['TI_LGAD_analysis_setup','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
 	
 	with bureaucrat.handle_task('plot_tracks_and_hits') as employee:
@@ -192,35 +192,36 @@ def plot_tracks_and_hits(bureaucrat:RunBureaucrat):
 			include_plotlyjs = 'cdn',
 		)
 		
-		logging.info('Doing 3D tracks plot...')
-		tracks_for_plotly = []
-		for AB in ['A','B']:
-			_ = tracks[[f'{AB}{coord}' for coord in ['x','y','z']]]
-			_.columns = ['x','y','z']
-			tracks_for_plotly.append(_)
-		tracks_for_plotly = pandas.concat(tracks_for_plotly)
-		tracks_for_plotly = tracks_for_plotly.join(tracks['DUT_name_rowcol'])
-		
-		fig = px.line_3d(
-			tracks_for_plotly.reset_index(drop=False).query('DUT_name_rowcol != "no hit"'),
-			title = f'Tracks<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
-			x = 'x',
-			y = 'y',
-			z = 'z',
-			color = 'DUT_name_rowcol',
-			line_group = 'n_event',
-			labels = {
-				'x': 'x (m)',
-				'y': 'y (m)',
-				'z': 'z (m)',
-			},
-		)
-		fig.update_layout(hovermode=False)
-		# ~ fig.layout.scene.camera.projection.type = "orthographic"
-		fig.write_html(
-			employee.path_to_directory_of_my_task/f'tracks_3D.html',
-			include_plotlyjs = 'cdn',
-		)
+		if do_3D_plot:
+			logging.info('Doing 3D tracks plot...')
+			tracks_for_plotly = []
+			for AB in ['A','B']:
+				_ = tracks[[f'{AB}{coord}' for coord in ['x','y','z']]]
+				_.columns = ['x','y','z']
+				tracks_for_plotly.append(_)
+			tracks_for_plotly = pandas.concat(tracks_for_plotly)
+			tracks_for_plotly = tracks_for_plotly.join(tracks['DUT_name_rowcol'])
+			
+			fig = px.line_3d(
+				tracks_for_plotly.reset_index(drop=False).query('DUT_name_rowcol != "no hit"'),
+				title = f'Tracks<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
+				x = 'x',
+				y = 'y',
+				z = 'z',
+				color = 'DUT_name_rowcol',
+				line_group = 'n_event',
+				labels = {
+					'x': 'x (m)',
+					'y': 'y (m)',
+					'z': 'z (m)',
+				},
+			)
+			fig.update_layout(hovermode=False)
+			# ~ fig.layout.scene.camera.projection.type = "orthographic"
+			fig.write_html(
+				employee.path_to_directory_of_my_task/f'tracks_3D.html',
+				include_plotlyjs = 'cdn',
+			)
 
 def translate_and_rotate_tracks(tracks:pandas.DataFrame, x_translation:float, y_translation:float, angle_rotation:float):
 	for xy,translation in {'x':x_translation,'y':y_translation}.items():
@@ -571,6 +572,13 @@ if __name__ == '__main__':
 		dest = 'efficiency_vs_distance_calculation',
 		action = 'store_true'
 	)
+	parser.add_argument(
+		'--enable_3D_tracks_plot',
+		help = 'Pass this flag to enable the 3D plot with the tracks, which can take longer to execute.',
+		required = False,
+		dest = 'enable_3D_tracks_plot',
+		action = 'store_true'
+	)
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
@@ -579,7 +587,7 @@ if __name__ == '__main__':
 		if args.plot_DUT_distributions == True:
 			plot_DUT_distributions(bureaucrat)
 		if args.plot_tracks_and_hits == True:
-			plot_tracks_and_hits(bureaucrat)
+			plot_tracks_and_hits(bureaucrat, do_3D_plot=args.enable_3D_tracks_plot)
 		if args.transformation_for_centering_and_leveling == True:
 			transformation_for_centering_and_leveling(bureaucrat)
 		if args.efficiency_vs_distance_calculation == True:
