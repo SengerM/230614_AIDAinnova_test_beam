@@ -17,7 +17,7 @@ def load_analysis_config(bureaucrat:RunBureaucrat):
 	with open(bureaucrat.path_to_run_directory/'analysis_configuration.json', 'r') as ifile:
 		return json.load(ifile)
 
-def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str):
+def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str)->RunBureaucrat:
 	"""Setup a directory structure to perform further analysis of a TI-LGAD
 	that is inside a batch pointed by `bureaucrat`. This should be the 
 	first step before starting a TI-LGAD analysis."""
@@ -28,7 +28,6 @@ def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str):
 		if DUT_name not in set(setup_configuration_info['DUT_name']):
 			raise RuntimeError(f'DUT_name {repr(DUT_name)} not present within the set of DUTs in {bureaucrat.run_name}, which is {set(setup_configuration_info["DUT_name"])}')
 		
-		logging.info(f'Creating directory for analysis of {DUT_name}...')
 		TILGAD_bureaucrat = employee.create_subrun(DUT_name)
 		for task_name in ['corry_reconstruct_tracks_with_telescope','parse_waveforms','batch_info']:
 			(TILGAD_bureaucrat.path_to_run_directory/task_name).symlink_to(Path('../../../'+task_name))
@@ -67,6 +66,7 @@ def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str):
 			pass
 		
 		logging.info(f'Directory for analysis of {DUT_name} created in "{TILGAD_bureaucrat.path_to_run_directory}"')
+		return TILGAD_bureaucrat
 
 def get_DUT_name(bureaucrat:RunBureaucrat):
 	"""Return the DUT name for the analysis pointed by `bureaucrat`."""
@@ -524,7 +524,7 @@ def efficiency_vs_distance_calculation(bureaucrat:RunBureaucrat):
 					include_plotlyjs = 'cdn',
 				)
 
-def setup_efficiency_vs_distance_analysis(bureaucrat, amplitude_threshold:float, DUT_z_position:float, x_translation:float, y_translation:float, rotation_around_z_deg:float, analyze_these_pixels:str, window_size_meters:float, window_step_meters:float):
+def setup_efficiency_vs_distance_analysis(bureaucrat, amplitude_threshold:float, DUT_z_position:float, x_translation:float, y_translation:float, rotation_around_z_deg:float, analyze_these_pixels:str, window_size_meters:float, window_step_meters:float, if_exists='raise error')->RunBureaucrat:
 	PIXEL_SIZE = 250e-6
 	ROI_DISTANCE_OFFSET = 50e-6
 	ROI_WIDTH = PIXEL_SIZE/3
@@ -599,10 +599,12 @@ def setup_efficiency_vs_distance_analysis(bureaucrat, amplitude_threshold:float,
 	}
 	
 	with bureaucrat.handle_task('efficiency_vs_distance', drop_old_data=False) as employee:
-		subrun = employee.create_subrun(analysis_config['analysis_name'], if_exists='raise error')
-		with subrun.handle_task('efficiency_vs_distance_config') as employee2:
+		subrun = employee.create_subrun(analysis_config['analysis_name'], if_exists=if_exists)
+		with subrun.handle_task('efficiency_vs_distance_analysis_config') as employee2:
 			with open(employee2.path_to_directory_of_my_task/'analysis_config.json', 'w') as ofile:
 				json.dump(analysis_config, ofile)
+	return subrun
+
 
 if __name__ == '__main__':
 	import sys
