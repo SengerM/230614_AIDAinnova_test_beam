@@ -605,6 +605,51 @@ def setup_efficiency_vs_distance_analysis(bureaucrat, amplitude_threshold:float,
 				json.dump(analysis_config, ofile)
 	return subrun
 
+def setup_analyses_from_GoogleSpreadsheet(path_to_AIDAinnova_test_beams:Path):
+	analyses = pandas.read_csv('https://docs.google.com/spreadsheets/d/e/2PACX-1vTaR20eM5ZQxtizmZiaAtHooE7hWYfSixSgc1HD5sVNZT_RNxZKmhI09wCEtXEVepjM8NB1n8BUBZnc/pub?gid=0&single=true&output=csv').set_index(['test_beam_campaign','batch_name','DUT_name']).query('DUT_type=="TI-LGAD"')
+	
+	PIXEL_GROUPS = {'top row','bottom row','left column','right column'}
+	
+	analyses = analyses.query(' or '.join([f'`{_}` == True' for _ in PIXEL_GROUPS]))
+	
+	tmp = []
+	for pg in PIXEL_GROUPS:
+		df = analyses.query(f'`{pg}` == True').drop(columns=sorted(PIXEL_GROUPS))
+		df['pixel_group'] = pg
+		tmp.append(df)
+	analyses = pandas.concat(tmp).set_index('pixel_group', append=True).sort_index()
+	
+	for test_beam_campaign, test_beam_campaign_analyses in analyses.groupby('test_beam_campaign'):
+		for batch_name, this_batch_analyses in test_beam_campaign_analyses.groupby('batch_name'):
+			batch_bureaucrat = RunBureaucrat(path_to_AIDAinnova_test_beams/test_beam_campaign/'analysis'/batch_name)
+			for DUT_name, this_DUT_analyses in this_batch_analyses.groupby('DUT_name'):
+				try:
+					setup_TI_LGAD_analysis(
+						bureaucrat = batch_bureaucrat,
+						DUT_name = DUT_name,
+					)
+					logging.info(f'Analysis for {repr(DUT_name)} was created')
+				except RuntimeError as e:
+					if all([_ in repr(e) for _ in {'Cannot create run','because it already exists'}]):
+						logging.info(f'Analysis for {repr(DUT_name)} already exists')
+					else:
+						raise e
+				
+				DUT_bureaucrat = [_ for _ in batch_bureaucrat.list_subruns_of_task('TI-LGADs_analyses') if _.run_name==DUT_name][0]
+				for pixel_group, analysis_settings in this_DUT_analyses.groupby('pixel_group'):
+					analysis_bureaucrat = setup_efficiency_vs_distance_analysis(
+						bureaucrat = DUT_bureaucrat,
+						amplitude_threshold = analysis_settings['Amplitude threshold (V)'].values[0],
+						DUT_z_position = analysis_settings['DUT_z_position'].values[0],
+						x_translation = analysis_settings['x_translation'].values[0],
+						y_translation = analysis_settings['y_translation'].values[0],
+						rotation_around_z_deg = analysis_settings['rotation_around_z_deg'].values[0],
+						analyze_these_pixels = pixel_group,
+						window_size_meters = 22e-6, 
+						window_step_meters = 3e-6,
+						if_exists = 'override',
+					)
+					logging.info(f'Analysis for "{test_beam_campaign}/{batch_name}/{DUT_name}/{pixel_group}" has been created in {analysis_bureaucrat.path_to_run_directory}')
 
 if __name__ == '__main__':
 	import sys
@@ -674,6 +719,12 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
+	
+	setup_analyses_from_GoogleSpreadsheet(
+		path_to_AIDAinnova_test_beams = Path('/media/msenger/230829_gray/AIDAinnova_test_beams'),
+	)
+	
+	a
 	
 	if bureaucrat.was_task_run_successfully('TI_LGAD_analysis_setup'):
 		if args.plot_DUT_distributions == True:
