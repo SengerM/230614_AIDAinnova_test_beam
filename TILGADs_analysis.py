@@ -524,6 +524,86 @@ def efficiency_vs_distance_calculation(bureaucrat:RunBureaucrat):
 					include_plotlyjs = 'cdn',
 				)
 
+def setup_efficiency_vs_distance_analysis(bureaucrat, amplitude_threshold:float, DUT_z_position:float, x_translation:float, y_translation:float, rotation_around_z_deg:float, analyze_these_pixels:str, window_size_meters:float, window_step_meters:float):
+	PIXEL_SIZE = 250e-6
+	ROI_DISTANCE_OFFSET = 50e-6
+	ROI_WIDTH = PIXEL_SIZE/3
+	PIXEL_DEPENDENT_SETTINGS = {
+		'top row': dict(
+			project_on = 'x',
+			ROI = dict(
+				x_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
+				x_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
+				y_min = PIXEL_SIZE/2-ROI_WIDTH/2,
+				y_max = PIXEL_SIZE/2+ROI_WIDTH/2,
+			),
+			left_pixel_rowcol = [0,0],
+			right_pixel_rowcol = [0,1],
+		),
+		'bottom row': dict(
+			project_on = 'x',
+			ROI = dict(
+				x_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
+				x_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
+				y_min = -PIXEL_SIZE/2-ROI_WIDTH/2,
+				y_max = -PIXEL_SIZE/2+ROI_WIDTH/2,
+				
+			),
+			left_pixel_rowcol = [1,0],
+			right_pixel_rowcol = [1,1],
+		),
+		'left column': dict(
+			project_on = 'y',
+			ROI = dict(
+				y_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
+				y_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
+				x_min = -PIXEL_SIZE/2-ROI_WIDTH/2,
+				x_max = -PIXEL_SIZE/2+ROI_WIDTH/2,
+			),
+			left_pixel_rowcol = [1,0],
+			right_pixel_rowcol = [0,0],
+		),
+		'right column': dict(
+			project_on = 'y',
+			ROI = dict(
+				y_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
+				y_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
+				x_min = PIXEL_SIZE/2-ROI_WIDTH/2,
+				x_max = PIXEL_SIZE/2+ROI_WIDTH/2,
+			),
+			left_pixel_rowcol = [1,1],
+			right_pixel_rowcol = [0,1],
+		),
+	}
+	
+	if analyze_these_pixels not in PIXEL_DEPENDENT_SETTINGS.keys():
+		raise ValueError(f'`analyze_these_pixels` must be in {set(PIXEL_DEPENDENT_SETTINGS.keys())}, but received {repr(analyze_these_pixels)}')
+	
+	bureaucrat.check_these_tasks_were_run_successfully('TI_LGAD_analysis_setup')
+	
+	analysis_config = {
+		"DUT_hit_selection_criterion_SQL_query": f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{amplitude_threshold}",
+		"DUT_z_position": DUT_z_position,
+		"transformation_for_centering_and_leveling": {
+			"x_translation": x_translation,
+			"y_translation": y_translation,
+			"rotation_around_z_deg": rotation_around_z_deg,
+		},
+		"analysis_name": f"{analyze_these_pixels.replace(' ','_')}_{int(window_size_meters*1e6)}um_{int(window_step_meters*1e6)}um",
+		"project_on": PIXEL_DEPENDENT_SETTINGS[analyze_these_pixels]['project_on'],
+		"ROI": PIXEL_DEPENDENT_SETTINGS[analyze_these_pixels]['ROI'],
+		"left_pixel_rowcol": PIXEL_DEPENDENT_SETTINGS[analyze_these_pixels]['left_pixel_rowcol'],
+		"right_pixel_rowcol": PIXEL_DEPENDENT_SETTINGS[analyze_these_pixels]['right_pixel_rowcol'],
+		"rolling_window_size": window_size_meters,
+		"n_distance_points": window_step_meters
+	}
+	
+	with bureaucrat.handle_task('efficiency_vs_distance', drop_old_data=False) as employee:
+		subrun = employee.create_subrun(analysis_config['analysis_name'], if_exists='raise error')
+		with subrun.handle_task('efficiency_vs_distance_config') as employee2:
+			with open(employee2.path_to_directory_of_my_task/'analysis_config.json', 'w') as ofile:
+				json.dump(analysis_config, ofile)
+
 if __name__ == '__main__':
 	import sys
 	import argparse
