@@ -6,7 +6,6 @@ import pandas
 from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://github.com/SengerM/huge_dataframe
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 import plotly.graph_objects as go
-from raw_to_root import raw_to_root
 import logging
 import utils
 import subprocess
@@ -190,7 +189,7 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 			parsed_data_dumper.append(this_event_parsed_data)
 			
 			if n_event%99==0 and n_CAEN == len(CAENs_names)-1:
-				logging.info(f'{n_event}/{number_of_events_to_be_processed} events processed. ({n_event/number_of_events_to_be_processed*100:.0f} %, {root_file_path.name})')
+				logging.info(f'{n_event}/{number_of_events_to_be_processed} events processed ({n_event/number_of_events_to_be_processed*100:.0f} %, {root_file_path.name})')
 		
 		CAENs_names = pandas.Series(CAENs_names)
 		CAENs_names.index.set_names('n_CAEN',inplace=True)
@@ -209,7 +208,7 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 		If `False` and the task `raw_to_root` was already executed successfully
 		for the run being handled by `bureaucrat`, nothing is done.
 	"""
-	bureaucrat.check_these_tasks_were_run_successfully('raw_to_root')
+	bureaucrat.check_these_tasks_were_run_successfully(['raw','raw_to_root'])
 	
 	if force==False and bureaucrat.was_task_run_successfully('parse_waveforms'):
 		return
@@ -217,27 +216,11 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 	NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS = 5
 	
 	with bureaucrat.handle_task('parse_waveforms') as employee:
-		path_to_directory_in_which_to_save_sqlite_databases = employee.path_to_directory_of_my_task/'parsed_data'
-		path_to_directory_in_which_to_save_sqlite_databases.mkdir()
-		path_to_CAENs_names_dir = employee.path_to_directory_of_my_task/'CAENs_names'
-		path_to_CAENs_names_dir.mkdir()
-		for path_to_root_file in (employee.path_to_directory_of_task('raw_to_root')/'root_files').iterdir():
-			sqlite_database_path = path_to_directory_in_which_to_save_sqlite_databases/path_to_root_file.name.replace('.root','.sqlite')
-			parse_waveforms_from_root_file_and_create_sqlite_database(
-				root_file_path = path_to_root_file,
-				sqlite_database_path = sqlite_database_path,
-				number_of_events_for_which_to_produce_control_plots = NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS,
-			)
-			for fmt in ['csv','pickle']:
-				subprocess.run(['mv', str(sqlite_database_path.parent)+f'/{sqlite_database_path.name.replace(".sqlite","")}_CAENs_names.{fmt}', str(path_to_CAENs_names_dir)])
-			CAENs_names_path = sqlite_database_path.parent/(sqlite_database_path.name.replace('.sqlite','_CAENs_names'))
-			if NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS > 0:
-				sqlite_database_path.with_suffix('.control_plots').rename(sqlite_database_path.parent.parent/sqlite_database_path.with_suffix('.control_plots').name)
-
-def parse_from_raw(bureaucrat:RunBureaucrat, force_raw_to_root:bool=False, force_root_to_sqlite:bool=False):
-	utils.setup_batch_info(bureaucrat)
-	raw_to_root(bureaucrat=bureaucrat, force=force_raw_to_root)
-	parse_waveforms(bureaucrat=bureaucrat, force=force_root_to_sqlite)
+		parse_waveforms_from_root_file_and_create_sqlite_database(
+			root_file_path = bureaucrat.path_to_directory_of_task('raw_to_root')/f'{bureaucrat.run_name}.root',
+			sqlite_database_path = employee.path_to_directory_of_my_task/f'{bureaucrat.run_name}.sqlite',
+			number_of_events_for_which_to_produce_control_plots = NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS,
+		)
 
 if __name__=='__main__':
 	import argparse
@@ -248,9 +231,9 @@ if __name__=='__main__':
 	
 	logging.basicConfig(
 		stream = sys.stderr, 
-		level = logging.DEBUG,
-		format = '%(asctime)s|%(levelname)s|%(funcName)s|%(message)s',
-		datefmt = '%Y-%m-%d %H:%M:%S',
+		level = logging.INFO,
+		format = '%(asctime)s|%(levelname)s|%(message)s',
+		datefmt = '%H:%M:%S',
 	)
 	
 	parser = argparse.ArgumentParser()
@@ -262,21 +245,18 @@ if __name__=='__main__':
 		type = str,
 	)
 	parser.add_argument(
-		'--force_raw_to_root',
-		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
+		'--force',
+		help = 'Force the execution.',
 		required = False,
-		dest = 'force_raw_to_root',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--force_root_to_sqlite',
-		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
-		required = False,
-		dest = 'force_root_to_sqlite',
+		dest = 'force',
 		action = 'store_true'
 	)
 	
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	parse_from_raw(bureaucrat, force_raw_to_root=args.force_raw_to_root, force_root_to_sqlite=args.force_root_to_sqlite)
+	utils.guess_where_how_to_run(
+		bureaucrat,
+		parse_waveforms,
+		force = args.force
+	)

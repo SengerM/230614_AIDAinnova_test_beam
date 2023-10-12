@@ -2,6 +2,7 @@ from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/Senger
 from pathlib import Path
 import subprocess
 import logging
+import warnings
 
 PATH_TO_caenCliRootWF = Path.home()/'code/Jordis_docker/eudaq/bin/caenCliRootWF'
 
@@ -35,26 +36,16 @@ def raw_to_root(bureaucrat:RunBureaucrat, force:bool=False):
 		except subprocess.CalledProcessError as e:
 			if e.returncode == -6:
 				# This happens always at the end, but the resulting file looks good...
+				warnings.warn(str(e))
 				pass
 			else:
 				raise e
 	logging.info(f'Raw file {path_to_raw_file} was successfully converted into a root file')
 
-def raw_to_root_whole_batch(batch_bureaucrat:RunBureaucrat, force:bool=False):
-	batch_bureaucrat.check_these_tasks_were_run_successfully('runs')
-	
-	for TB_run_bureaucrat in batch_bureaucrat.list_subruns_of_task('runs'):
-		raw_to_root(TB_run_bureaucrat, force)
-
-def raw_to_root_whole_TB_campaign(TB_campaign_bureaucrat:RunBureaucrat, force:bool=False):
-	TB_campaign_bureaucrat.check_these_tasks_were_run_successfully('batches')
-	
-	for batch in TB_campaign_bureaucrat.list_subruns_of_task('batches'):
-		raw_to_root_whole_batch(batch, force)
-
 if __name__=='__main__':
 	import argparse
 	import sys
+	from utils import guess_where_how_to_run
 	
 	logging.basicConfig(
 		stream = sys.stderr, 
@@ -81,12 +72,8 @@ if __name__=='__main__':
 	
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
-	
-	if bureaucrat.was_task_run_successfully('batches'):
-		raw_to_root_whole_TB_campaign(bureaucrat, force=args.force)
-	elif bureaucrat.was_task_run_successfully('runs'):
-		raw_to_root_whole_batch(bureaucrat, force=args.force)
-	elif bureaucrat.was_task_run_successfully('raw'):
-		raw_to_root(bureaucrat, force=args.force)
-	else:
-		raise RuntimeError(f'Dont know how to process run {repr(bureaucrat.run_name)} located in {bureaucrat.path_to_run_directory}')
+	guess_where_how_to_run(
+		bureaucrat,
+		raw_to_root,
+		force = args.force,
+	)

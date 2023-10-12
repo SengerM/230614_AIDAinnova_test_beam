@@ -200,5 +200,27 @@ def project_track_in_z(A:numpy.array, B:numpy.array, z:float):
 	track_direction = (A-B)/(numpy.linalg.norm(A-B, axis=0))
 	return A + track_direction*(z-A[2])/dot(track_direction, numpy.tile(numpy.array([0,0,1]), (int(A.size/3),1)).T)
 
+def run_on_batch_runs(batch_bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+	batch_bureaucrat.check_these_tasks_were_run_successfully('runs') # To ensure that we are on a "batch node".
+	
+	for TB_run_bureaucrat in batch_bureaucrat.list_subruns_of_task('runs'):
+		raw_level_f(TB_run_bureaucrat, **kwargs)
+
+def run_on_TB_campaign_batches(TB_campaign_bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+	TB_campaign_bureaucrat.check_these_tasks_were_run_successfully('batches') # To ensure we are on a "TB campaign node".
+	
+	for batch in TB_campaign_bureaucrat.list_subruns_of_task('batches'):
+		run_on_batch_runs(batch, raw_level_f, **kwargs)
+
+def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+	if bureaucrat.was_task_run_successfully('batches'):
+		run_on_TB_campaign_batches(bureaucrat, raw_level_f, **kwargs)
+	elif bureaucrat.was_task_run_successfully('runs'):
+		run_on_batch_runs(bureaucrat, raw_level_f, **kwargs)
+	elif bureaucrat.was_task_run_successfully('raw'):
+		raw_level_f(bureaucrat, **kwargs)
+	else:
+		raise RuntimeError(f'Dont know how to process run {repr(bureaucrat.run_name)} located in {bureaucrat.path_to_run_directory}')
+
 if __name__=='__main__':
 	load_setup_configuration_info(RunBureaucrat(Path('/home/msenger/June_test_beam_data/analysis/batch_3')))
