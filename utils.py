@@ -2,6 +2,8 @@ import pandas
 from pathlib import Path
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 import numpy
+import subprocess
+import datetime
 
 def save_dataframe(df, name:str, location:Path):
 	for extension,method in {'pickle':df.to_pickle,'csv':df.to_csv}.items():
@@ -221,6 +223,53 @@ def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, **kwa
 		raw_level_f(bureaucrat, **kwargs)
 	else:
 		raise RuntimeError(f'Dont know how to process run {repr(bureaucrat.run_name)} located in {bureaucrat.path_to_run_directory}')
+
+def get_run_directory_within_corry_docker(bureaucrat:RunBureaucrat):
+	"""Get the absolute path of the run directory within the corry docker
+	container."""
+	if bureaucrat.exists() == False:
+		raise RuntimeError(f'Run pointed to by `bureaucrat` does not exist: {bureaucrat.path_to_run_directory}')
+	TB_data_analysis_bureaucrat = bureaucrat
+	while True:
+		try:
+			TB_data_analysis_bureaucrat = TB_data_analysis_bureaucrat.parent
+		except RuntimeError as e:
+			if 'No parent bureaucrat found for' in repr(e):
+				break
+			else:
+				raise e
+	
+	return Path('/data')/bureaucrat.path_to_run_directory.relative_to(TB_data_analysis_bureaucrat.path_to_run_directory.parent)
+
+def run_commands_in_docker_container(command, container_id:str, stdout=None, stderr=None):
+	"""Runs one or more commands inside a docker container.
+	
+	Arguments
+	---------
+	command: str or list of str
+		A string with the command, or a list of strings with multiple
+		commands to be executed sequentially.
+	"""
+	timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
+	temp_file = Path(f'/media/msenger/230829_gray/AIDAinnova_test_beams/.{timestamp}_{numpy.random.rand()*1e9:.0f}.sh')
+	if isinstance(command, str):
+		command = [command]
+	try:
+		with open(temp_file, 'w') as ofile:
+			print('#!/bin/bash', file=ofile)
+			for c in command:
+				print(c, file=ofile)
+		subprocess.run(['chmod','+x',str(temp_file)])
+		result = subprocess.run(
+			['docker','exec','-it',container_id,f'/data/{temp_file.name}'],
+			stdout = stdout,
+			stderr = stderr,
+		)
+	except:
+		raise
+	finally:
+		temp_file.unlink()
+	return result
 
 if __name__=='__main__':
 	load_setup_configuration_info(RunBureaucrat(Path('/home/msenger/June_test_beam_data/analysis/batch_3')))

@@ -1,12 +1,14 @@
+"""All the code in this file assumes that there is a Docker container
+running the 'Jordi`s eudaq container'."""
+
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 from pathlib import Path
-import subprocess
 import logging
 import warnings
+import utils
+import subprocess
 
-PATH_TO_caenCliRootWF = Path.home()/'code/Jordis_docker/eudaq/bin/caenCliRootWF'
-
-def raw_to_root(bureaucrat:RunBureaucrat, force:bool=False):
+def raw_to_root(bureaucrat:RunBureaucrat, container_id:str, force:bool=False):
 	"""Converts all the raw data files into Root files using the `caenCliRootWF`.
 	
 	Arguments
@@ -24,28 +26,19 @@ def raw_to_root(bureaucrat:RunBureaucrat, force:bool=False):
 	
 	with bureaucrat.handle_task('raw_to_root') as employee:
 		logging.info(f'Processing {bureaucrat.path_to_run_directory}...')
-		path_to_raw_file = bureaucrat.path_to_directory_of_task('raw')/f'{bureaucrat.run_name}.raw'
-		result = subprocess.run(
-			[str(PATH_TO_caenCliRootWF), '-i', str(path_to_raw_file), '-o', str(employee.path_to_directory_of_my_task/path_to_raw_file.name.replace('.raw','.root'))],
-			cwd = PATH_TO_caenCliRootWF.parent,
+		path_to_raw_file = utils.get_run_directory_within_corry_docker(bureaucrat)/'raw'/f'{bureaucrat.run_name}.raw'
+		path_to_root_file = utils.get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/f'{bureaucrat.run_name}.root'
+		result = utils.run_commands_in_docker_container(
+			f'/eudaq/eudaq/bin/caenCliRootWF -i {path_to_raw_file} -o {path_to_root_file}',
+			container_id = container_id,
 			stdout = subprocess.DEVNULL,
 			stderr = subprocess.STDOUT,
 		)
-		try:
-			result.check_returncode()
-		except subprocess.CalledProcessError as e:
-			if e.returncode == -6:
-				# This happens always at the end, but the resulting file looks good...
-				warnings.warn(str(e))
-				pass
-			else:
-				raise e
-	logging.info(f'Raw file {path_to_raw_file} was successfully converted into a root file')
+		result.check_returncode()
 
 if __name__=='__main__':
 	import argparse
 	import sys
-	from utils import guess_where_how_to_run
 	
 	logging.basicConfig(
 		stream = sys.stderr, 
@@ -69,11 +62,19 @@ if __name__=='__main__':
 		dest = 'force',
 		action = 'store_true'
 	)
+	parser.add_argument('--container_id',
+		metavar = 'id', 
+		help = 'Id of the docker container running `Jordis eudaq docker`. Once the container is already running, you can get the id with `docker ps`.',
+		required = True,
+		dest = 'container_id',
+		type = str,
+	)
 	
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
-	guess_where_how_to_run(
+	utils.guess_where_how_to_run(
 		bureaucrat,
 		raw_to_root,
 		force = args.force,
+		container_id = args.container_id,
 	)
