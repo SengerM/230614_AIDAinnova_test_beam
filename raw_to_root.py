@@ -36,6 +36,12 @@ def raw_to_root(bureaucrat:RunBureaucrat, force:bool=False):
 			else:
 				raise e
 	logging.info(f'Raw file {path_to_raw_file} was successfully converted into a root file')
+
+def raw_to_root_whole_batch(batch_bureaucrat:RunBureaucrat, force:bool=False):
+	batch_bureaucrat.check_these_tasks_were_run_successfully('runs')
+	
+	for TB_run_bureaucrat in batch_bureaucrat.list_subruns_of_task('runs'):
+		raw_to_root(TB_run_bureaucrat, force)
 	
 if __name__=='__main__':
 	import argparse
@@ -59,4 +65,4 @@ if __name__=='__main__':
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	raw_to_root(bureaucrat, force=args.force)
+	raw_to_root_whole_batch(bureaucrat, force=args.force)
