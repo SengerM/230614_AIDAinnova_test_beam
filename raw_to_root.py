@@ -8,7 +8,7 @@ import warnings
 import utils
 import subprocess
 
-def raw_to_root(bureaucrat:RunBureaucrat, container_id:str, force:bool=False):
+def raw_to_root(bureaucrat:RunBureaucrat, container_id:str, force:bool=False, silent_root:bool=False):
 	"""Converts all the raw data files into Root files using the `caenCliRootWF`.
 	
 	Arguments
@@ -31,8 +31,8 @@ def raw_to_root(bureaucrat:RunBureaucrat, container_id:str, force:bool=False):
 		result = utils.run_commands_in_docker_container(
 			f'/eudaq/eudaq/bin/caenCliRootWF -i {path_to_raw_file} -o {path_to_root_file}',
 			container_id = container_id,
-			stdout = subprocess.DEVNULL,
-			stderr = subprocess.STDOUT,
+			stdout = subprocess.DEVNULL if silent_root == True else None,
+			stderr = subprocess.STDOUT if silent_root == True else None,
 		)
 		result.check_returncode()
 
@@ -77,4 +77,5 @@ if __name__=='__main__':
 		raw_to_root,
 		force = args.force,
 		container_id = args.container_id,
+		silent_root = True,
 	)

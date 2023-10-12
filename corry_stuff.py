@@ -288,6 +288,13 @@ if __name__ == '__main__':
 		dest = 'force',
 		action = 'store_true'
 	)
+	parser.add_argument(
+		'--show_corry_output',
+		help = 'If this flag is passed, all the output from corry will be printed, otherwise it is hidden.',
+		required = False,
+		dest = 'show_corry_output',
+		action = 'store_true'
+	)
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
@@ -297,5 +304,5 @@ if __name__ == '__main__':
 		raw_level_f = corry_do_all_steps_in_some_run,
 		corry_container_id = args.container_id,
 		force = args.force,
-		silent_corry = True,
+		silent_corry = not args.show_corry_output,
 	)
