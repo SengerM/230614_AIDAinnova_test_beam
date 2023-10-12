@@ -11,11 +11,6 @@ import pandas
 import configparser
 import sqlite3
 
-def run_command_in_corry_docker_container(command:str, container_id:str):
-	"""Runs a command inside the 'corry docker container'. The container
-	id is hardcoded in the function."""
-	return subprocess.run(['docker','exec','-it',container_id,command])
-
 def replace_arguments_in_file_template(file_template:Path, output_file:Path, arguments:dict):
 	"""Given a file template with arguments denoted by 'ASD(argument_name)DSA',
 	replace the arguments and create a new file with the values written
@@ -30,24 +25,7 @@ def replace_arguments_in_file_template(file_template:Path, output_file:Path, arg
 					line = line.replace(f'ASD({arg_name})DSA',arg_val)
 				print(line, file=ofile, end='')
 
-def get_run_directory_within_corry_docker(bureaucrat:RunBureaucrat):
-	"""Get the absolute path of the run directory within the corry docker
-	container."""
-	if bureaucrat.exists() == False:
-		raise RuntimeError(f'Run pointed to by `bureaucrat` does not exist: {bureaucrat.path_to_run_directory}')
-	TB_data_analysis_bureaucrat = bureaucrat
-	while True:
-		try:
-			TB_data_analysis_bureaucrat = TB_data_analysis_bureaucrat.parent
-		except RuntimeError as e:
-			if 'No parent bureaucrat found for' in repr(e):
-				break
-			else:
-				raise e
-	
-	return Path('/data')/bureaucrat.path_to_run_directory.relative_to(TB_data_analysis_bureaucrat.path_to_run_directory.parent)
-
-def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False):
+def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	"""Runs the routine to mask the noisy pixels using corryvreckan. The
 	`bureaucrat` must point to a 'raw run' run, for example to this:
 	TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_200V/runs/subruns/run000930_230623222123"""
@@ -71,7 +49,7 @@ def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, corry_container_id:str, fo
 				PATH_TO_RAW_FILE = f'"../raw/{bureaucrat.run_name}.raw"',
 			),
 			'tell_corry_docker_to_run_this.sh': dict(
-				WORKING_DIRECTORY = str(get_run_directory_within_corry_docker(bureaucrat)/employee.task_name),
+				WORKING_DIRECTORY = str(utils.get_run_directory_within_corry_docker(bureaucrat)/employee.task_name),
 			),
 		}
 		
@@ -85,16 +63,20 @@ def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, corry_container_id:str, fo
 		# Make the script executable for docker:
 		subprocess.run(['chmod','+x',str(employee.path_to_directory_of_my_task/'tell_corry_docker_to_run_this.sh')])
 
-		result = run_command_in_corry_docker_container(
-			command = get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/'tell_corry_docker_to_run_this.sh',
+		logging.info(f'Running mask noisy pixels on {bureaucrat.path_to_run_directory}...')
+		result = utils.run_commands_in_docker_container(
+			command = str(utils.get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/'tell_corry_docker_to_run_this.sh'),
 			container_id = corry_container_id,
+			stdout = subprocess.DEVNULL if silent_corry == True else None,
+			stderr = subprocess.STDOUT if silent_corry == True else None,
 		)
 		result.check_returncode()
-		logging.info(f'All noisy pixels masks were completed for raw file {bureaucrat.run_name}.raw!')
+		logging.info(f'Mask noisy pixels was completed ✅')
 
-def corry_align_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False):
-	"""Runs the routine to align the telescope using corryvreckan on
-	all the raw files of the run pointed to by `bureaucrat`."""
+def corry_align_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
+	"""Runs the routine to align the telescope using corryvreckan. The
+	`bureaucrat` must point to a 'raw run' run, for example to this:
+	TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_200V/runs/subruns/run000930_230623222123"""
 	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/02_align_telescope')
 	
 	TASK_NAME = 'corry_align_telescope'
@@ -103,85 +85,72 @@ def corry_align_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, forc
 		logging.info(f'Found an already successfull execution of {TASK_NAME} within {bureaucrat.run_name}, will not do anything.')
 		return
 	
-	bureaucrat.check_these_tasks_were_run_successfully('corry_mask_noisy_pixels')
+	bureaucrat.check_these_tasks_were_run_successfully(['raw','corry_mask_noisy_pixels'])
 	
 	with bureaucrat.handle_task(TASK_NAME) as employee:
-		for path_to_raw_file in (bureaucrat.path_to_run_directory/'raw').iterdir():
-			logging.info(f'Creating corry config files for raw file {path_to_raw_file.name}...')
-			
-			raw_file_name_without_extension = path_to_raw_file.parts[-1].replace(".raw","")
-			path_to_raw_file_within_docker_container = get_run_directory_within_corry_docker(bureaucrat)/f'raw/{path_to_raw_file.parts[-1]}'
-			output_directory_within_corry_docker = get_run_directory_within_corry_docker(bureaucrat)/f'{employee.task_name}/{raw_file_name_without_extension}/corry_output'
-			
-			path_to_where_to_save_the_config_files = employee.path_to_directory_of_my_task/raw_file_name_without_extension
-			path_to_where_to_save_the_config_files.mkdir()
-			
-			# First of all, copy the geometry file adding the mask noisy pixels extra lines.
-			path_to_geometry_file_with_noisy_pixels_mask = path_to_where_to_save_the_config_files/'corry_geometry_for_this_batch_with_noisy_pixels_mask.geo'
-			with open(bureaucrat.path_to_run_directory/'corry_geometry_for_this_batch.geo', 'r') as ifile:
-				with open(path_to_geometry_file_with_noisy_pixels_mask, 'w') as ofile:
-					for line in ifile:
-						print(line, file=ofile, end='')
-						for n_mimosa in [0,1,2,3,4,5]:
-							if f'[MIMOSA26_{n_mimosa}]' in line:
-								print(f'mask_file = "../../corry_mask_noisy_pixels/{raw_file_name_without_extension}/corry_output/MaskCreator/MIMOSA26_{n_mimosa}/mask_MIMOSA26_{n_mimosa}.txt"', file=ofile)
-			
-			# Now create the config files from the templates.
-			arguments_for_config_files = {
-				'01_prealign-telescope.conf': dict(
-					OUTPUT_DIRECTORY = f'"{output_directory_within_corry_docker}"',
-					GEOMETRY_FILE = f'"{path_to_geometry_file_with_noisy_pixels_mask.name}"',
-					UPDATED_GEOMETRY_FILE = f'"{output_directory_within_corry_docker}/prealign-telescope.geo"',
-					PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
-				),
-				'02_align-telescope.conf': dict(
-					OUTPUT_DIRECTORY = f'"{output_directory_within_corry_docker}"',
-					GEOMETRY_FILE = f'"{output_directory_within_corry_docker}/prealign-telescope.geo"', # The output from the previous one.
-					UPDATED_GEOMETRY_FILE = f'"{output_directory_within_corry_docker}/align-telescope.geo"',
-					PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
-				),
-				'03_align-telescope-mille.conf': dict(
-					OUTPUT_DIRECTORY = f'"{output_directory_within_corry_docker}"',
-					GEOMETRY_FILE = f'"{output_directory_within_corry_docker}/align-telescope.geo"', # The output from the previous one.
-					UPDATED_GEOMETRY_FILE = f'"{output_directory_within_corry_docker}/align-telescope-mille.geo"',
-					PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
-				),
-				'04_check-alignment-telescope.conf': dict(
-					OUTPUT_DIRECTORY = f'"{output_directory_within_corry_docker}"',
-					GEOMETRY_FILE = f'"{output_directory_within_corry_docker}/align-telescope-mille.geo"', # The output from the previous one.
-					PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
-				),
-				'tell_corry_docker_to_run_this.sh': dict(
-					WORKING_DIRECTORY = str(output_directory_within_corry_docker.parent),
-					GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS = str("corry_output/align-telescope.geo"),
-				),
-			}
-			for fname in arguments_for_config_files:
-				replace_arguments_in_file_template(
-					file_template = TEMPLATE_FILES_DIRECTORY/f'{fname}.template',
-					output_file = path_to_where_to_save_the_config_files/fname,
-					arguments = arguments_for_config_files[fname],
-				)
-			
-			# Make the scripts executable for docker:
-			for fname in path_to_where_to_save_the_config_files.iterdir():
-				if fname.suffix == '.sh':
-					subprocess.run(['chmod','+x',str(fname)])
-		logging.info('Corry config files were created for all raw files.')
-	
-		# Finally, run corry on each raw file.
-		logging.info('Will now run the corry container on each raw file.')
-		for p in employee.path_to_directory_of_my_task.iterdir():
-			if p.is_dir() and p.name[:3] == 'run':
-				logging.info(f'Running corry docker on {p}...')
-				result = run_command_in_corry_docker_container(
-					command = get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh',
-					container_id = corry_container_id,
-				)
-				result.check_returncode()
-		logging.info(f'Telescope alignment was completed for all raw files in run {bureaucrat.run_name}!')
+		path_to_raw_file_within_docker_container = f'../raw/{bureaucrat.run_name}.raw'
 
-def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False):
+		# First of all, copy the geometry file adding the mask noisy pixels extra lines.
+		path_to_geometry_file_with_noisy_pixels_mask = employee.path_to_directory_of_my_task/'corry_geometry_for_this_batch_with_noisy_pixels_mask.geo'
+		with open(bureaucrat.parent.path_to_run_directory/'corry_geometry_for_this_batch.geo', 'r') as ifile:
+			with open(path_to_geometry_file_with_noisy_pixels_mask, 'w') as ofile:
+				for line in ifile:
+					print(line, file=ofile, end='')
+					for n_mimosa in [0,1,2,3,4,5]:
+						if f'[MIMOSA26_{n_mimosa}]' in line:
+							print(f'mask_file = "../corry_mask_noisy_pixels/corry_output/MaskCreator/MIMOSA26_{n_mimosa}/mask_MIMOSA26_{n_mimosa}.txt"', file=ofile)
+		
+		# Now create the config files from the templates.
+		arguments_for_config_files = {
+			'tell_corry_docker_to_run_this.sh': dict(
+				WORKING_DIRECTORY = str(utils.get_run_directory_within_corry_docker(bureaucrat)/employee.task_name),
+				GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS = "corry_output/align-telescope.geo",
+			),
+			'01_prealign-telescope.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"{path_to_geometry_file_with_noisy_pixels_mask.name}"',
+				UPDATED_GEOMETRY_FILE = f'"corry_output/prealign-telescope.geo"',
+				PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
+			),
+			'02_align-telescope.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"corry_output/prealign-telescope.geo"', # The output from the previous one.
+				UPDATED_GEOMETRY_FILE = f'"corry_output/align-telescope.geo"',
+				PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
+			),
+			'03_align-telescope-mille.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"corry_output/align-telescope.geo"', # The output from the previous one.
+				UPDATED_GEOMETRY_FILE = f'"corry_output/align-telescope-mille.geo"',
+				PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
+			),
+			'04_check-alignment-telescope.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"corry_output/align-telescope-mille.geo"', # The output from the previous one.
+				PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
+			),
+		}
+		for fname in arguments_for_config_files:
+			replace_arguments_in_file_template(
+				file_template = TEMPLATE_FILES_DIRECTORY/f'{fname}.template',
+				output_file = employee.path_to_directory_of_my_task/fname,
+				arguments = arguments_for_config_files[fname],
+			)
+			
+		# Make the script executable for docker:
+		subprocess.run(['chmod','+x',str(employee.path_to_directory_of_my_task/'tell_corry_docker_to_run_this.sh')])
+		
+		logging.info(f'Running corry telescope align on {bureaucrat.path_to_run_directory}...')
+		result = utils.run_commands_in_docker_container(
+			command = str(utils.get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/'tell_corry_docker_to_run_this.sh'),
+			container_id = corry_container_id,
+			stdout = subprocess.DEVNULL if silent_corry == True else None,
+			stderr = subprocess.STDOUT if silent_corry == True else None,
+		)
+		result.check_returncode()
+		logging.info(f'Telescope alignment was completed ✅')
+
+def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	"""Runs the routine to reconstruct the tracks using corryvreckan on
 	all the raw files of the run pointed to by `bureaucrat`. Additionally,
 	it creates an SQLite file with the tracks info which is easy to read,
@@ -194,78 +163,69 @@ def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, corry_cont
 		logging.info(f'Found an already successfull execution of {TASK_NAME} within {bureaucrat.run_name}, will not do anything.')
 		return
 	
-	bureaucrat.check_these_tasks_were_run_successfully(['corry_mask_noisy_pixels','corry_align_telescope'])
+	bureaucrat.check_these_tasks_were_run_successfully(['raw','corry_mask_noisy_pixels','corry_align_telescope'])
 	
 	with bureaucrat.handle_task(TASK_NAME) as employee:
-		for path_to_raw_file in (bureaucrat.path_to_run_directory/'raw').iterdir():
-			logging.info(f'Creating corry config files for raw file {path_to_raw_file.name}...')
-			
-			raw_file_name_without_extension = path_to_raw_file.parts[-1].replace(".raw","")
-			path_to_raw_file_within_docker_container = get_run_directory_within_corry_docker(bureaucrat)/f'raw/{path_to_raw_file.parts[-1]}'
-			output_directory_within_corry_docker = get_run_directory_within_corry_docker(bureaucrat)/f'{employee.task_name}/{raw_file_name_without_extension}/corry_output'
-			
-			path_to_where_to_save_the_config_files = employee.path_to_directory_of_my_task/raw_file_name_without_extension
-			path_to_where_to_save_the_config_files.mkdir()
-			
-			arguments_for_config_files = {
-				'01_reconstruct_tracks.conf': dict(
-					OUTPUT_DIRECTORY = f'"{output_directory_within_corry_docker}"',
-					GEOMETRY_FILE = f'"{output_directory_within_corry_docker.parent.parent.parent}/corry_align_telescope/{raw_file_name_without_extension}/corry_output/align-telescope-mille.geo"',
-					PATH_TO_RAW_FILE = f'"{path_to_raw_file_within_docker_container}"',
-					NAME_OF_OUTPUT_FILE_WITH_TRACKS = f'"tracks.root"',
-				),
-				'tell_corry_docker_to_run_this.sh': dict(
-					WORKING_DIRECTORY = str(output_directory_within_corry_docker.parent),
-				),
-				'corry_tracks_root2csv.py': dict(
-					PATH_TO_TRACKSdotROOT_FILE = f"'{output_directory_within_corry_docker}/tracks.root'",
-				),
-			}
-			
-			for fname in arguments_for_config_files:
-				replace_arguments_in_file_template(
-					file_template = TEMPLATE_FILES_DIRECTORY/f'{fname}.template',
-					output_file = path_to_where_to_save_the_config_files/fname,
-					arguments = arguments_for_config_files[fname],
-				)
-			
-			# Make the scripts executable for docker:
-			for fname in path_to_where_to_save_the_config_files.iterdir():
-				if fname.suffix == '.sh':
-					subprocess.run(['chmod','+x',str(fname)])
-		logging.info('Corry config files were created for all raw files.')
+		arguments_for_config_files = {
+			'01_reconstruct_tracks.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"../corry_align_telescope/corry_output/align-telescope-mille.geo"',
+				PATH_TO_RAW_FILE = f'"../raw/{bureaucrat.run_name}.raw"',
+				NAME_OF_OUTPUT_FILE_WITH_TRACKS = f'"tracks.root"',
+			),
+			'tell_corry_docker_to_run_this.sh': dict(
+				WORKING_DIRECTORY = str(utils.get_run_directory_within_corry_docker(bureaucrat)/employee.task_name),
+			),
+			'corry_tracks_root2csv.py': dict(
+				PATH_TO_TRACKSdotROOT_FILE = f"'corry_output/tracks.root'",
+			),
+		}
 		
-		logging.info('Will now run the corry container on each raw file.')
-		for p in employee.path_to_directory_of_my_task.iterdir():
-			if p.is_dir() and p.name[:3] == 'run':
-				logging.info(f'Running corry docker on {p}...')
-				result = run_command_in_corry_docker_container(
-					command = get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/p.name/'tell_corry_docker_to_run_this.sh',
-					container_id = corry_container_id,
-				)
-				result.check_returncode()
-				logging.info(f'Corry docker on {p} finished successfully reconstructing the tracks!')
-				
-				logging.info(f'Converting the CSV file into an SQLite file on {p}...')
-				dtype = dict(
-					n_event = int,
-					n_track = int,
-					is_fitted = bool,
-					chi2 = float,
-					ndof = float,
-					Ax = float,
-					Ay = float,
-					Az = float,
-					Bx = float,
-					By = float,
-					Bz = float,
-				)
-				with SQLiteDataFrameDumper(p/'tracks.sqlite', dump_after_n_appends=1e3) as tracks_dumper:
-					for df in pandas.read_csv(p/output_directory_within_corry_docker.name/'tracks.csv', chunksize=1111, index_col=['n_event','n_track']):
-						tracks_dumper.append(df)
-				logging.info('CSV to SQLite file conversion successful, CSV file will be removed.')
-				(p/output_directory_within_corry_docker.name/'tracks.csv').unlink()
-		logging.info('Tracks were reconstructed for all raw files!')
+		for fname in arguments_for_config_files:
+			replace_arguments_in_file_template(
+				file_template = TEMPLATE_FILES_DIRECTORY/f'{fname}.template',
+				output_file = employee.path_to_directory_of_my_task/fname,
+				arguments = arguments_for_config_files[fname],
+			)
+		
+		# Make the scripts executable for docker:
+		for fname in arguments_for_config_files:
+			subprocess.run(['chmod','+x',str(employee.path_to_directory_of_my_task/fname)])
+		
+		logging.info(f'Reconstructing tracks with corry on {bureaucrat.path_to_run_directory}...')
+		result = utils.run_commands_in_docker_container(
+			command = str(utils.get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/'tell_corry_docker_to_run_this.sh'),
+			container_id = corry_container_id,
+			stdout = subprocess.DEVNULL if silent_corry == True else None,
+			stderr = subprocess.STDOUT if silent_corry == True else None,
+		)
+		result.check_returncode()
+		
+		logging.info(f'Converting the CSV file into an SQLite file on {bureaucrat.path_to_run_directory}...')
+		dtype = dict(
+			n_event = int,
+			n_track = int,
+			is_fitted = bool,
+			chi2 = float,
+			ndof = float,
+			Ax = float,
+			Ay = float,
+			Az = float,
+			Bx = float,
+			By = float,
+			Bz = float,
+		)
+		with SQLiteDataFrameDumper(employee.path_to_directory_of_my_task/'tracks.sqlite', dump_after_n_appends=1e3) as tracks_dumper:
+			for df in pandas.read_csv(employee.path_to_directory_of_my_task/'corry_output'/'tracks.csv', chunksize=1111, index_col=['n_event','n_track']):
+				tracks_dumper.append(df)
+		logging.info('CSV to SQLite file conversion successful, CSV file will be removed.')
+		(employee.path_to_directory_of_my_task/'corry_output'/'tracks.csv').unlink()
+		logging.info(f'Tracks were reconstructed ✅')
+
+def corry_do_all_steps_in_some_run(run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
+	corry_mask_noisy_pixels(bureaucrat=run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	corry_align_telescope(bureaucrat=run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	corry_reconstruct_tracks_with_telescope(bureaucrat=run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 
 def load_tracks_for_events_with_track_multiplicity_1(bureaucrat):
 	bureaucrat.check_these_tasks_were_run_successfully('corry_reconstruct_tracks_with_telescope')
@@ -322,59 +282,20 @@ if __name__ == '__main__':
 		type = str,
 	)
 	parser.add_argument(
-		'--force_all',
+		'--force',
 		help = 'If this flag is passed, it will force the processing even if it was already done beforehand. Old data will be deleted.',
 		required = False,
-		dest = 'force_all',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--force_mask_noisy_pixels',
-		help = 'If this flag is passed, it will force the processing of "corry_mask_noisy_pixels" even if it was already done beforehand. Old data will be deleted.',
-		required = False,
-		dest = 'force_mask_noisy_pixels',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--force_align_telescope',
-		help = 'If this flag is passed, it will force the processing of "corry_align_telescope" even if it was already done beforehand. Old data will be deleted.',
-		required = False,
-		dest = 'force_align_telescope',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--force_reconstruct_tracks_with_telescope',
-		help = 'If this flag is passed, it will force the processing of "corry_reconstruct_tracks_with_telescope" even if it was already done beforehand. Old data will be deleted.',
-		required = False,
-		dest = 'force_reconstruct_tracks_with_telescope',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--force_corry_efficiencies',
-		help = 'If this flag is passed, it will force the processing of "corry_efficiencies" even if it was already done beforehand. Old data will be deleted.',
-		required = False,
-		dest = 'force_corry_efficiencies',
+		dest = 'force',
 		action = 'store_true'
 	)
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	corry_mask_noisy_pixels(
+	utils.guess_where_how_to_run(
 		bureaucrat = bureaucrat,
+		raw_level_f = corry_do_all_steps_in_some_run,
 		corry_container_id = args.container_id,
-		force = args.force_all or args.force_mask_noisy_pixels,
-	)
-	
-	AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-	
-	corry_align_telescope(
-		bureaucrat = bureaucrat,
-		corry_container_id = args.container_id,
-		force = args.force_all or args.force_align_telescope,
-	)
-	corry_reconstruct_tracks_with_telescope(
-		bureaucrat = bureaucrat,
-		corry_container_id = args.container_id,
-		force = args.force_all or args.force_reconstruct_tracks_with_telescope,
+		force = args.force,
+		silent_corry = False,
 	)

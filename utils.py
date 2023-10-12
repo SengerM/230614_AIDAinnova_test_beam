@@ -202,19 +202,26 @@ def project_track_in_z(A:numpy.array, B:numpy.array, z:float):
 	track_direction = (A-B)/(numpy.linalg.norm(A-B, axis=0))
 	return A + track_direction*(z-A[2])/dot(track_direction, numpy.tile(numpy.array([0,0,1]), (int(A.size/3),1)).T)
 
-def run_on_batch_runs(batch_bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
-	batch_bureaucrat.check_these_tasks_were_run_successfully('runs') # To ensure that we are on a "batch node".
-	
-	for TB_run_bureaucrat in batch_bureaucrat.list_subruns_of_task('runs'):
-		raw_level_f(TB_run_bureaucrat, **kwargs)
-
-def run_on_TB_campaign_batches(TB_campaign_bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
-	TB_campaign_bureaucrat.check_these_tasks_were_run_successfully('batches') # To ensure we are on a "TB campaign node".
-	
-	for batch in TB_campaign_bureaucrat.list_subruns_of_task('batches'):
-		run_on_batch_runs(batch, raw_level_f, **kwargs)
-
 def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+	"""Given a `raw_level_f` function that is intended to operate on a
+	`raw run`, i.e. a bureaucrat node containing one of the runs from
+	the TB (e.g. TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_230V/runs/subruns/run000937_230625134927)
+	this function will automatically iterate it over all the runs if `bureaucrat`
+	points to a batch (e.g. TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_230V), 
+	or will automatically iterate it over all batches and runs if `bureaucrat` 
+	points to a campaign (e.g. TB_data_analysis/campaigns/subruns/230614_June)"""
+	def run_on_batch_runs(batch_bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+		batch_bureaucrat.check_these_tasks_were_run_successfully('runs') # To ensure that we are on a "batch node".
+		
+		for TB_run_bureaucrat in batch_bureaucrat.list_subruns_of_task('runs'):
+			raw_level_f(TB_run_bureaucrat, **kwargs)
+
+	def run_on_TB_campaign_batches(TB_campaign_bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+		TB_campaign_bureaucrat.check_these_tasks_were_run_successfully('batches') # To ensure we are on a "TB campaign node".
+		
+		for batch in TB_campaign_bureaucrat.list_subruns_of_task('batches'):
+			run_on_batch_runs(batch, raw_level_f, **kwargs)
+	
 	if bureaucrat.was_task_run_successfully('batches'):
 		run_on_TB_campaign_batches(bureaucrat, raw_level_f, **kwargs)
 	elif bureaucrat.was_task_run_successfully('runs'):
@@ -252,8 +259,12 @@ def run_commands_in_docker_container(command, container_id:str, stdout=None, std
 	"""
 	timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
 	temp_file = Path(f'/media/msenger/230829_gray/AIDAinnova_test_beams/.{timestamp}_{numpy.random.rand()*1e9:.0f}.sh')
+	if not isinstance(command, (str, list)):
+		raise TypeError(f'`command` must be a list or a string, received object of type {type(command)}')
 	if isinstance(command, str):
 		command = [command]
+	if any([not isinstance(_, str) for _ in command]):
+		raise TypeError(f'`command` must be a list of strings, but at least one element is not.')
 	try:
 		with open(temp_file, 'w') as ofile:
 			print('#!/bin/bash', file=ofile)
