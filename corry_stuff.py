@@ -263,7 +263,7 @@ if __name__ == '__main__':
 		stream = sys.stderr, 
 		level = logging.INFO,
 		format = '%(asctime)s|%(levelname)s|%(funcName)s|%(message)s',
-		datefmt = '%Y-%m-%d %H:%M:%S',
+		datefmt = '%H:%M:%S',
 	)
 	
 	parser = argparse.ArgumentParser()
@@ -297,5 +297,5 @@ if __name__ == '__main__':
 		raw_level_f = corry_do_all_steps_in_some_run,
 		corry_container_id = args.container_id,
 		force = args.force,
-		silent_corry = False,
+		silent_corry = True,
 	)
