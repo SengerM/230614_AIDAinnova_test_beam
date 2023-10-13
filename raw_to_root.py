@@ -35,6 +35,7 @@ def raw_to_root(bureaucrat:RunBureaucrat, container_id:str, force:bool=False, si
 			stderr = subprocess.STDOUT if silent_root == True else None,
 		)
 		result.check_returncode()
+		logging.info(f'Successfully converted raw to root in {bureaucrat.path_to_run_directory} ✅')
 
 if __name__=='__main__':
 	import argparse
