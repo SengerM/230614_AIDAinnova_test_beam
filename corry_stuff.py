@@ -227,32 +227,40 @@ def corry_do_all_steps_in_some_run(run:RunBureaucrat, corry_container_id:str, fo
 	corry_align_telescope(bureaucrat=run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_reconstruct_tracks_with_telescope(bureaucrat=run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 
-def load_tracks_for_events_with_track_multiplicity_1(bureaucrat):
-	bureaucrat.check_these_tasks_were_run_successfully('corry_reconstruct_tracks_with_telescope')
+def load_tracks_from_run(bureaucrat:RunBureaucrat, only_multiplicity_one:bool=False):
+	"""Loads the tracks reconstructed by `corry_reconstruct_tracks_with_telescope`.
 	
-	tracks = []
-	for p in bureaucrat.path_to_directory_of_task('corry_reconstruct_tracks_with_telescope').iterdir():
-		if not p.is_dir():
-			continue
-		df = pandas.read_sql(
-			'SELECT * FROM dataframe_table GROUP BY n_event HAVING COUNT(n_track) = 1', # Read only events with track multiplicity 1.
-			con = sqlite3.connect(p/'tracks.sqlite'),
-		)
-		df['n_run'] = int(p.parts[-1].split('_')[0].replace('run',''))
-		df['n_event'] = df['n_event'] - 1 # Fix an offset that is present in the data, I think it has to do with the extra trigger sent by the TLU when the run starts, that was not sent to the CAENs.
-		df.set_index(['n_run','n_event','n_track'], inplace=True)
-		tracks.append(df)
-	tracks = pandas.concat(tracks)
+	Arguments
+	---------
+	bureaucrat: RunBureaucrat
+		A bureaucrat pointing to a run.
+	only_multiplicity_one: bool, default False
+		If `True`, only tracks whose event has track multiplicity 1 will
+		be loaded.
+	"""
+	bureaucrat.check_these_tasks_were_run_successfully(['raw','corry_reconstruct_tracks_with_telescope'])
+	
+	SQL_query = 'SELECT * FROM dataframe_table'
+	if only_multiplicity_one == True:
+		SQL_query += 'GROUP BY n_event HAVING COUNT(n_track) = 1',
+	tracks = pandas.read_sql(
+		SQL_query,
+		con = sqlite3.connect(bureaucrat.path_to_directory_of_task('corry_reconstruct_tracks_with_telescope')/'tracks.sqlite'),
+	)
+	
+	tracks['n_event'] = tracks['n_event'] - 1 # Fix an offset that is present in the data, I think it has to do with the extra trigger sent by the TLU when the run starts, that was not sent to the CAENs.
 	
 	tracks[['Ax','Ay','Az','Bx','By']] *= 1e-3 # Convert millimeter to meter, it is more natural to work in SI units.
 	
-	# Check that the track multiplicity is indeed 1 for all events loaded:
-	n_tracks_in_event = tracks['is_fitted'].groupby(['n_run','n_event']).count()
-	n_tracks_in_event.name = 'n_tracks_in_event'
-	if set(n_tracks_in_event) != {1} or len(tracks) == 0:
-		raise RuntimeError(f'Failed to load tracks only from events with track multiplicity 1...')
+	tracks.set_index(['n_event','n_track'], inplace=True)
 	
-	tracks.reset_index('n_track', drop=True, inplace=True)
+	if only_multiplicity_one == True:
+		# Check that the track multiplicity is indeed 1 for all events loaded:
+		n_tracks_in_event = tracks['is_fitted'].groupby(['n_run','n_event']).count()
+		n_tracks_in_event.name = 'n_tracks_in_event'
+		if set(n_tracks_in_event) != {1} or len(tracks) == 0:
+			raise RuntimeError(f'Failed to load tracks only from events with track multiplicity 1...')
+	
 	return tracks
 
 if __name__ == '__main__':

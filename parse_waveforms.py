@@ -11,34 +11,6 @@ import utils
 import subprocess
 import sqlite3
 
-def read_parsed_from_waveforms_from_run(TB_run:RunBureaucrat, DUT_name:str, variables:list=['Amplitude (V)'], additional_SQL_selection:str=None, limit:int=None):
-	if not isinstance(variables, list):
-		raise TypeError(f'`variables` must be a list of str, received object of type {type(variables)}. ')
-	TB_run.check_these_tasks_were_run_successfully(['raw','parse_waveforms'])
-	
-	setup_config = utils.load_setup_configuration_info(TB_run.parent)
-	
-	if DUT_name not in set(setup_config["DUT_name"]):
-		raise ValueError(f'DUT_name "{DUT_name}" not present in {TB_run.pseudopath}, available DUTs in this dataset are {set(setup_config["DUT_name"])}.')
-	
-	SQL_where_this_DUT = ' OR '.join([f'(n_CAEN=={_["n_CAEN"]} AND CAEN_n_channel=={_["CAEN_n_channel"]})' for idx,_ in setup_config.query(f'DUT_name=="{DUT_name}"').iterrows()])
-	if len(variables) != 0:
-		variables = ',' + ','.join([f'`{_}`' for _ in variables])
-	else:
-		variables = ''
-	SQL_query = f'SELECT n_event,n_CAEN,CAEN_n_channel{variables} FROM dataframe_table WHERE ({SQL_where_this_DUT})'
-	if additional_SQL_selection is not None:
-		SQL_query += f' AND ({additional_SQL_selection})'
-	if isinstance(limit, int):
-		SQL_query += f'LIMIT {limit}'
-	
-	data = pandas.read_sql(
-		SQL_query,
-		con = sqlite3.connect(TB_run.path_to_directory_of_task('parse_waveforms')/f'{TB_run.run_name}.sqlite'),
-	)
-	data.set_index(['n_event','n_CAEN','CAEN_n_channel'], inplace=True)
-	return data
-
 def parse_waveform(signal:PeakSignal, vertical_unit:str, horizontal_unit:str):
 	"""Parse a waveform and extract features like the amplitude, noise,
 	rise time, etc."""

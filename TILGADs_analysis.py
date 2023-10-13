@@ -7,8 +7,7 @@ import sqlite3
 import plotly.express as px
 import numpy
 import plotly_utils
-from corry_stuff import load_tracks_for_events_with_track_multiplicity_1
-from parse_waveforms import read_parsed_from_waveforms
+from corry_stuff import load_tracks_from_run
 import json
 import warnings
 
@@ -17,86 +16,96 @@ def load_analysis_config(bureaucrat:RunBureaucrat):
 	with open(bureaucrat.path_to_run_directory/'analysis_configuration.json', 'r') as ifile:
 		return json.load(ifile)
 
-def setup_TI_LGAD_analysis(bureaucrat:RunBureaucrat, DUT_name:str)->RunBureaucrat:
+def setup_TI_LGAD_analysis_within_batch(bureaucrat:RunBureaucrat, DUT_name:str)->RunBureaucrat:
 	"""Setup a directory structure to perform further analysis of a TI-LGAD
 	that is inside a batch pointed by `bureaucrat`. This should be the 
 	first step before starting a TI-LGAD analysis."""
-	bureaucrat.check_these_tasks_were_run_successfully(['batch_info','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
+	bureaucrat.check_these_tasks_were_run_successfully(['runs','batch_info'])
 	
 	with bureaucrat.handle_task('TI-LGADs_analyses', drop_old_data=False) as employee:
 		setup_configuration_info = utils.load_setup_configuration_info(bureaucrat)
 		if DUT_name not in set(setup_configuration_info['DUT_name']):
-			raise RuntimeError(f'DUT_name {repr(DUT_name)} not present within the set of DUTs in {bureaucrat.run_name}, which is {set(setup_configuration_info["DUT_name"])}')
+			raise RuntimeError(f'DUT_name {repr(DUT_name)} not present within the set of DUTs in {bureaucrat.pseudopath}, which is {set(setup_configuration_info["DUT_name"])}')
 		
-		TILGAD_bureaucrat = employee.create_subrun(DUT_name)
-		for task_name in ['corry_reconstruct_tracks_with_telescope','parse_waveforms','batch_info']:
-			(TILGAD_bureaucrat.path_to_run_directory/task_name).symlink_to(Path('../../../'+task_name))
+		try:
+			TILGAD_bureaucrat = employee.create_subrun(DUT_name)
+			with TILGAD_bureaucrat.handle_task('this_is_a_TI-LGAD_analysis'):
+				pass
+			logging.info(f'Directory structure for TI-LGAD analysis was created in {TILGAD_bureaucrat.pseudopath} ')
+		except RuntimeError as e: # This will happen if the run already existed beforehand.
+			if 'Cannot create run' in str(e):
+				TILGAD_bureaucrat = [b for b in bureaucrat.list_subruns_of_task('TI-LGADs_analyses') if b.run_name==DUT_name][0]
 		
-		# Create analysis configuration file to be filled up:
-		with open(TILGAD_bureaucrat.path_to_run_directory/'analysis_configuration.json','w') as ofile:
-			file_content = '''{
-	"DUT_hit_selection_criterion_SQL_query": "100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<X",
-	"DUT_z_position": null,
-	"transformation_for_centering_and_leveling": {
-		"x_translation": null,
-		"y_translation": null,
-		"rotation_around_z_deg": null
-	},
-	"efficiency_calculations": [
-		{
-			"analysis_name": null,
-			"project_on": null,
-			"ROI": {
-				"x_min": null,
-				"y_min": null,
-				"x_max": null,
-				"y_max": null
-			},
-			"left_pixel_rowcol": [null,null],
-			"right_pixel_rowcol": [null,null],
-			"rolling_window_size": null,
-			"n_distance_points": null
-		}
-	]
-}
-'''
-			ofile.writelines(file_content)
-		
-		with TILGAD_bureaucrat.handle_task('TI_LGAD_analysis_setup'):
-			pass
-		
-		logging.info(f'Directory for analysis of {DUT_name} created in "{TILGAD_bureaucrat.path_to_run_directory}"')
-		return TILGAD_bureaucrat
+	return TILGAD_bureaucrat
 
-def get_DUT_name(bureaucrat:RunBureaucrat):
-	"""Return the DUT name for the analysis pointed by `bureaucrat`."""
-	bureaucrat.check_these_tasks_were_run_successfully('TI_LGAD_analysis_setup')
-	return bureaucrat.run_name
+def read_parsed_from_waveforms_from_run(TB_run:RunBureaucrat, DUT_name:str, variables:list=['Amplitude (V)'], additional_SQL_selection:str=None, n_events:int=None):
+	if not isinstance(variables, list):
+		raise TypeError(f'`variables` must be a list of str, received object of type {type(variables)}. ')
+	TB_run.check_these_tasks_were_run_successfully(['raw','parse_waveforms'])
+	
+	setup_config = utils.load_setup_configuration_info(TB_run.parent)
+	
+	if DUT_name not in set(setup_config["DUT_name"]):
+		raise ValueError(f'DUT_name "{DUT_name}" not present in {TB_run.pseudopath}, available DUTs in this dataset are {set(setup_config["DUT_name"])}.')
+	
+	SQL_where_this_DUT = ' OR '.join([f'(n_CAEN=={_["n_CAEN"]} AND CAEN_n_channel=={_["CAEN_n_channel"]})' for idx,_ in setup_config.query(f'DUT_name=="{DUT_name}"').iterrows()])
+	if len(variables) != 0:
+		variables = ',' + ','.join([f'`{_}`' for _ in variables])
+	else:
+		variables = ''
+	SQL_query = f'SELECT n_event,n_CAEN,CAEN_n_channel{variables} FROM dataframe_table WHERE ({SQL_where_this_DUT})'
+	if additional_SQL_selection is not None:
+		SQL_query += f' AND ({additional_SQL_selection})'
+	if isinstance(n_events, int):
+		SQL_query += f' AND n_event <= {n_events}'
+	
+	data = pandas.read_sql(
+		SQL_query,
+		con = sqlite3.connect(TB_run.path_to_directory_of_task('parse_waveforms')/f'{TB_run.run_name}.sqlite'),
+	)
+	data.set_index(['n_event','n_CAEN','CAEN_n_channel'], inplace=True)
+	return data
 
-def plot_DUT_distributions(bureaucrat:RunBureaucrat):
+def read_parsed_from_waveforms_from_batch(batch:RunBureaucrat, DUT_name:str, variables:list=['Amplitude (V)'], additional_SQL_selection:str=None, n_events:int=None):
+	batch.check_these_tasks_were_run_successfully('runs')
+	
+	runs = batch.list_subruns_of_task('runs')
+	data = []
+	for run in runs:
+		df = read_parsed_from_waveforms_from_run(
+			TB_run = run,
+			DUT_name = DUT_name,
+			variables = variables,
+			additional_SQL_selection = additional_SQL_selection,
+			n_events = int(n_events/len(runs)) if isinstance(n_events, int) else None,
+		)
+		df = pandas.concat({int(run.run_name.split('_')[0].replace('run','')): df}, names=['n_run'])
+		data.append(df)
+	return pandas.concat(data)
+
+def plot_DUT_distributions(TI_LGAD_analysis_bureaucrat:RunBureaucrat):
 	"""Plot some raw distributions, useful to configure cuts and thresholds
 	for further steps in the analysis."""
-	MAXIMUM_NUMBER_OF_POINTS_TO_PLOT = 9999
-	bureaucrat.check_these_tasks_were_run_successfully('TI_LGAD_analysis_setup')
+	MAXIMUM_NUMBER_OF_EVENTS = 9999
+	TI_LGAD_analysis_bureaucrat.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis') # To be sure we are inside what is supposed to be a TI-LGAD analysis.
 	
-	with bureaucrat.handle_task('plot_DUT_distributions') as employee:
-		setup_config = utils.load_setup_configuration_info(bureaucrat)
+	with TI_LGAD_analysis_bureaucrat.handle_task('plot_distributions') as employee:
+		setup_config = utils.load_setup_configuration_info(TI_LGAD_analysis_bureaucrat.parent)
 		
 		save_distributions_plots_here = employee.path_to_directory_of_my_task/'distributions'
 		save_distributions_plots_here.mkdir()
 		for variable in ['Amplitude (V)','t_50 (s)','Noise (V)','Time over 50% (s)',]:
 			logging.info(f'Plotting {variable} distribution...')
-			data = read_parsed_from_waveforms(
-				bureaucrat = bureaucrat,
-				DUT_name = get_DUT_name(bureaucrat),
+			data = read_parsed_from_waveforms_from_batch(
+				batch = TI_LGAD_analysis_bureaucrat.parent,
+				DUT_name = TI_LGAD_analysis_bureaucrat.run_name,
 				variables = [variable],
-				limit = MAXIMUM_NUMBER_OF_POINTS_TO_PLOT,
+				n_events = MAXIMUM_NUMBER_OF_EVENTS,
 			)
-			data = data.sample(n=MAXIMUM_NUMBER_OF_POINTS_TO_PLOT) # To limit the number of entries plotted.
 			data = data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
 			fig = px.ecdf(
 				data.sort_values('DUT_name_rowcol'),
-				title = f'{variable} distribution<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
+				title = f'{variable} distribution<br><sup>{TI_LGAD_analysis_bureaucrat.pseudopath}</sup>',
 				x = variable,
 				marginal = 'histogram',
 				color = 'DUT_name_rowcol',
@@ -110,17 +119,16 @@ def plot_DUT_distributions(bureaucrat:RunBureaucrat):
 		save_scatter_plots_here.mkdir()
 		for x,y in [('t_50 (s)','Amplitude (V)'), ('Time over 50% (s)','Amplitude (V)'),]:
 			logging.info(f'Plotting {y} vs {x} scatter_plot...')
-			data = read_parsed_from_waveforms(
-				bureaucrat = bureaucrat,
-				DUT_name = get_DUT_name(bureaucrat),
+			data = read_parsed_from_waveforms_from_batch(
+				batch = TI_LGAD_analysis_bureaucrat.parent,
+				DUT_name = TI_LGAD_analysis_bureaucrat.run_name,
 				variables = [x,y],
-				limit = MAXIMUM_NUMBER_OF_POINTS_TO_PLOT,
+				n_events = MAXIMUM_NUMBER_OF_EVENTS,
 			)
-			data = data.sample(n=MAXIMUM_NUMBER_OF_POINTS_TO_PLOT) # To limit the number of entries plotted.
 			data = data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
 			fig = px.scatter(
 				data.sort_values('DUT_name_rowcol').reset_index(drop=False),
-				title = f'{y} vs {x} scatter plot<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
+				title = f'{y} vs {x} scatter plot<br><sup>{TI_LGAD_analysis_bureaucrat.pseudopath}</sup>',
 				x = x,
 				y = y,
 				color = 'DUT_name_rowcol',
@@ -726,16 +734,16 @@ if __name__ == '__main__':
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	setup_analyses_from_GoogleSpreadsheet(
-		path_to_AIDAinnova_test_beams = Path('/media/msenger/230829_gray/AIDAinnova_test_beams'),
-	)
-	execute_all_analyses(
-		path_to_AIDAinnova_test_beams = Path('/media/msenger/230829_gray/AIDAinnova_test_beams'),
-	)
+	# ~ setup_analyses_from_GoogleSpreadsheet(
+		# ~ path_to_AIDAinnova_test_beams = Path('/media/msenger/230829_gray/AIDAinnova_test_beams'),
+	# ~ )
+	# ~ execute_all_analyses(
+		# ~ path_to_AIDAinnova_test_beams = Path('/media/msenger/230829_gray/AIDAinnova_test_beams'),
+	# ~ )
 	
-	a
+	# ~ a
 	
-	if bureaucrat.was_task_run_successfully('TI_LGAD_analysis_setup'):
+	if bureaucrat.was_task_run_successfully('this_is_a_TI-LGAD_analysis'):
 		if args.plot_DUT_distributions == True:
 			plot_DUT_distributions(bureaucrat)
 		if args.plot_tracks_and_hits == True:
@@ -745,10 +753,9 @@ if __name__ == '__main__':
 		if args.efficiency_vs_distance_calculation == True:
 			efficiency_vs_distance_calculation(bureaucrat)
 	elif args.setup_analysis_for_DUT != 'None':
-		setup_TI_LGAD_analysis(
+		setup_TI_LGAD_analysis_within_batch(
 			bureaucrat, 
 			DUT_name = args.setup_analysis_for_DUT,
 		)
-		logging.info(f'A new analysis for DUT named "{args.setup_analysis_for_DUT}" was created inside {bureaucrat.path_to_run_directory}')
 	else:
 		raise RuntimeError(f"Don't know what to do in {bureaucrat.path_to_run_directory}... Please read script help or source code.")
