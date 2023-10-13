@@ -6,6 +6,7 @@ import subprocess
 import datetime
 from contextlib import nullcontext
 from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
+import logging
 
 def save_dataframe(df, name:str, location:Path):
 	for extension,method in {'pickle':df.to_pickle,'csv':df.to_csv}.items():
@@ -25,24 +26,38 @@ def setup_batch_info(bureaucrat:RunBureaucrat):
 	"""Add some batch-wise information needed for the analysis, like
 	for example a link to the setup connection spreadsheet."""
 	def setup_batch_info_June_test_beam(bureaucrat:RunBureaucrat):
-		PATH_TO_SETUP_CONNECTIONS_FILES = Path.home()/'June_test_beam_data/AIDAInnova_June/setup_connections'
+		bureaucrat.check_these_tasks_were_run_successfully('runs') # So we are sure this is pointing to a batch
+		
+		n_batch = int(bureaucrat.run_name.split('_')[1])
+		if n_batch in {2,3,4}:
+			path_to_setup_connection_ods = Path('/media/msenger/230829_gray/AIDAinnova_test_beams/raw_data/230614_June/AIDAInnova_June/setup_connections')/f'Batch{n_batch}.ods'
+		elif n_batch in {5,6}:
+			path_to_setup_connection_ods = Path('/media/msenger/230829_gray/AIDAinnova_test_beams/raw_data/230614_June/CMS-ETL_June/setup_connections')/f'setup_connections_Batch{n_batch}.ods'
+		else:
+			raise RuntimeError(f'Cannot determine batch name appropriately!')
+		
+		RENAME_SHEETS = dict(
+			planes = 'planes_definition',
+			signals = 'pixels_definition',
+		)
 		
 		with bureaucrat.handle_task('batch_info') as employee:
-			with open(bureaucrat.path_to_run_directory/'n_batch', 'r') as ifile:
-				n_batch = int(ifile.readline())
-			path_to_setup_connection_ods = PATH_TO_SETUP_CONNECTIONS_FILES/f'Batch{n_batch}.ods'
-			
-			have_to_navigate_backwards = [_ for i,_ in enumerate(employee.path_to_directory_of_my_task.parts) if _!=path_to_setup_connection_ods.parts[i]]
-			have_to_navigate_upwards_afterward = [_ for i,_ in enumerate(path_to_setup_connection_ods.parts) if _!=employee.path_to_directory_of_my_task.parts[i]]
-			
-			relative_path_to_setup_connection_ods = Path('/'.join(['..' for i in have_to_navigate_backwards]))/Path('/'.join(have_to_navigate_upwards_afterward))
-			
-			(employee.path_to_directory_of_my_task/'setup_connections.ods').symlink_to(relative_path_to_setup_connection_ods)
+			for sheet_name in {'planes','signals'}:
+				df = pandas.read_excel(
+					path_to_setup_connection_ods,
+					sheet_name = sheet_name,
+				).set_index('plane_number')
+				save_dataframe(
+					df,
+					name = RENAME_SHEETS[sheet_name],
+					location = employee.path_to_directory_of_my_task,
+				)
 	
 	def setup_batch_info_August_test_beam(bureaucrat:RunBureaucrat):
+		bureaucrat.check_these_tasks_were_run_successfully('runs') # So we are sure this is pointing to a batch
+		
 		with bureaucrat.handle_task('batch_info') as employee:
-			with open(bureaucrat.path_to_run_directory/'n_batch', 'r') as ifile:
-				n_batch = int(ifile.readline())
+			n_batch = int(bureaucrat.run_name.split('_')[1])
 			planes_definition = pandas.read_csv(
 				'https://docs.google.com/spreadsheets/d/e/2PACX-1vTuRXCnGCPu8nuTrrh_6M_QaBYwVQZfmLX7cr6OlM-ucf9yx3KIbBN4XBQxc0fTp-O26Y2QIOCkgP98/pub?gid=0&single=true&output=csv',
 				dtype = dict(
@@ -75,6 +90,9 @@ def setup_batch_info(bureaucrat:RunBureaucrat):
 		setup_batch_info_June_test_beam(bureaucrat)
 	elif which_test_beam_campaign(bureaucrat) == '230830_August':
 		setup_batch_info_August_test_beam(bureaucrat)
+	else:
+		raise RuntimeError(f'Cannot determine which test beam campaign {bureaucrat.pseudopath} belongs to...')
+	logging.info(f'Setup info was set for {bureaucrat.pseudopath} ✅')
 
 CAENs_CHANNELS_MAPPING_TO_INTEGERS = pandas.DataFrame(
 	# This codification into integers comes from the producer, see in line 208 of `CAENDT5742Producer.py`. The reason is that EUDAQ can only handle integers tags, or something like this.
@@ -314,18 +332,4 @@ def run_commands_in_docker_container(command, container_id:str, stdout=None, std
 	return result
 
 if __name__=='__main__':
-	import my_telegram_bots # Secret tokens from my bots
-	import time
-	
-	def dummy_test_function(run_bureaucrat:RunBureaucrat, a, b):
-		print(f'I am in {run_bureaucrat.pseudopath} with a {a} and b {b}')
-		time.sleep(5)
-	
-	guess_where_how_to_run(
-		bureaucrat = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB_data_analysis/campaigns/subruns/230614_June')),
-		raw_level_f = lambda bureaucrat: dummy_test_function(bureaucrat, a=1, b=2),
-		telegram_bot_reporter = SafeTelegramReporter4Loops(
-			bot_token = my_telegram_bots.robobot.token,
-			chat_id = my_telegram_bots.chat_ids['Robobot TCT setup'],
-		),
-	)
+	setup_batch_info(RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_200V')))
