@@ -36,11 +36,6 @@ def setup_batch_info(bureaucrat:RunBureaucrat):
 		else:
 			raise RuntimeError(f'Cannot determine batch name appropriately!')
 		
-		RENAME_SHEETS = dict(
-			planes = 'planes_definition',
-			signals = 'pixels_definition',
-		)
-		
 		with bureaucrat.handle_task('batch_info') as employee:
 			for sheet_name in {'planes','signals'}:
 				df = pandas.read_excel(
@@ -49,7 +44,7 @@ def setup_batch_info(bureaucrat:RunBureaucrat):
 				).set_index('plane_number')
 				save_dataframe(
 					df,
-					name = RENAME_SHEETS[sheet_name],
+					name = sheet_name,
 					location = employee.path_to_directory_of_my_task,
 				)
 	
@@ -103,11 +98,13 @@ CAENs_CHANNELS_MAPPING_TO_INTEGERS = pandas.DataFrame(
 )
 
 def load_setup_configuration_info(bureaucrat:RunBureaucrat)->pandas.DataFrame:
-	bureaucrat.check_these_tasks_were_run_successfully(['batch_info','parse_waveforms'])
+	bureaucrat.check_these_tasks_were_run_successfully(['runs','batch_info'])
+	if not all([b.was_task_run_successfully('parse_waveforms') for b in bureaucrat.list_subruns_of_task('runs')]):
+		raise RuntimeError(f'To load the setup configuration it is needed that all of the runs of the batch have had the `parse_waveforms` task performed on them, but does not seem to be the case')
 	
 	if which_test_beam_campaign(bureaucrat) == '230614_June':
-		planes = pandas.read_excel(bureaucrat.path_to_directory_of_task('batch_info')/'setup_connections.ods', sheet_name='planes', index_col='plane_number')
-		signals_connections = pandas.read_excel(bureaucrat.path_to_directory_of_task('batch_info')/'setup_connections.ods', sheet_name='signals', index_col='plane_number')
+		planes = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'planes.pickle')
+		signals_connections = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'signals.pickle')
 	elif which_test_beam_campaign(bureaucrat) == '230830_August':
 		planes = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'planes_definition.pickle')
 		signals_connections = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'pixels_definition.pickle')
@@ -124,15 +121,15 @@ def load_setup_configuration_info(bureaucrat:RunBureaucrat)->pandas.DataFrame:
 		raise RuntimeError(f'Cannot read setup information for run {bureaucrat.run_name}')
 	
 	CAENs_names = []
-	for sqlite_file_path in (bureaucrat.path_to_directory_of_task('parse_waveforms')/'parsed_data').iterdir():
-		n_run = int(sqlite_file_path.name.split('_')[0].replace('run',''))
-		df = pandas.read_pickle(bureaucrat.path_to_directory_of_task('parse_waveforms')/'CAENs_names'/sqlite_file_path.name.replace('.sqlite','_CAENs_names.pickle'))
+	for run in bureaucrat.list_subruns_of_task('runs'):
+		n_run = int(run.run_name.split('_')[0].replace('run',''))
+		df = pandas.read_pickle(run.path_to_directory_of_task('parse_waveforms')/f'{run.run_name}_CAENs_names.pickle')
 		df = df.to_frame()
 		df['n_run'] = n_run
 		df.set_index('n_run',append=True,inplace=True)
 		CAENs_names.append(df)
 	CAENs_names = pandas.concat(CAENs_names)
-	CAENs_names['CAEN_name'] = CAENs_names['CAEN_name'].apply(lambda x: x.replace('CAEN_','')) # In some point in EUDAQ or in the raw to root conversion, the CAENs names are prepended "CAEN_", which is annoying...
+	CAENs_names['CAEN_name'] = CAENs_names['CAEN_name'].apply(lambda x: x.replace('CAEN_',''))
 	
 	# Here we assume that the CAENs were not changed within a batch, which is reasonable.
 	_ = CAENs_names.reset_index('n_CAEN',drop=False).set_index('CAEN_name',append=True).reset_index('n_run',drop=True)
@@ -332,4 +329,5 @@ def run_commands_in_docker_container(command, container_id:str, stdout=None, std
 	return result
 
 if __name__=='__main__':
-	setup_batch_info(RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_200V')))
+	config = load_setup_configuration_info(RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_4')))
+	print(config)
