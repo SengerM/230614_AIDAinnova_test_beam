@@ -4,6 +4,8 @@ from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/Senger
 import numpy
 import subprocess
 import datetime
+from contextlib import nullcontext
+from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
 
 def save_dataframe(df, name:str, location:Path):
 	for extension,method in {'pickle':df.to_pickle,'csv':df.to_csv}.items():
@@ -202,32 +204,61 @@ def project_track_in_z(A:numpy.array, B:numpy.array, z:float):
 	track_direction = (A-B)/(numpy.linalg.norm(A-B, axis=0))
 	return A + track_direction*(z-A[2])/dot(track_direction, numpy.tile(numpy.array([0,0,1]), (int(A.size/3),1)).T)
 
-def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, telegram_bot_reporter:SafeTelegramReporter4Loops=None):
 	"""Given a `raw_level_f` function that is intended to operate on a
 	`raw run`, i.e. a bureaucrat node containing one of the runs from
 	the TB (e.g. TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_230V/runs/subruns/run000937_230625134927)
 	this function will automatically iterate it over all the runs if `bureaucrat`
 	points to a batch (e.g. TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_230V), 
 	or will automatically iterate it over all batches and runs if `bureaucrat` 
-	points to a campaign (e.g. TB_data_analysis/campaigns/subruns/230614_June)"""
-	def run_on_batch_runs(batch_bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+	points to a campaign (e.g. TB_data_analysis/campaigns/subruns/230614_June)
+	
+	Arguments
+	---------
+	bureaucrat: RunBureaucrat
+		The bureaucrat of the top level on which to apply the `raw_level_f`.
+	raw_level_f: callable
+		The function to be executed recursively. The signature has to be
+		`raw_level_f = f(bureaucrat:RunBureaucrat)`.
+	telegram_bot_reporter SafeTelegramReporter4Loops, default None
+		An optional bot to report the progress and any issues.
+	"""
+	def run_on_batch_runs(batch_bureaucrat:RunBureaucrat, raw_level_f:callable, telegram_bot_reporter:SafeTelegramReporter4Loops=None):
 		batch_bureaucrat.check_these_tasks_were_run_successfully('runs') # To ensure that we are on a "batch node".
 		
-		for TB_run_bureaucrat in batch_bureaucrat.list_subruns_of_task('runs'):
-			raw_level_f(TB_run_bureaucrat, **kwargs)
+		runs_to_be_processed = batch_bureaucrat.list_subruns_of_task('runs')
+		
+		with telegram_bot_reporter.report_loop(
+			total_loop_iterations = len(runs_to_be_processed),
+			loop_name = f'{raw_level_f.__name__} on runs {bureaucrat.pseudopath}',
+		) if telegram_bot_reporter is not None else nullcontext() as reporter:
+			for TB_run_bureaucrat in runs_to_be_processed:
+				raw_level_f(TB_run_bureaucrat)
+				reporter.update(1) if telegram_bot_reporter is not None else None
 
-	def run_on_TB_campaign_batches(TB_campaign_bureaucrat:RunBureaucrat, raw_level_f:callable, **kwargs):
+	def run_on_TB_campaign_batches(TB_campaign_bureaucrat:RunBureaucrat, raw_level_f:callable, telegram_bot_reporter:SafeTelegramReporter4Loops=None):
 		TB_campaign_bureaucrat.check_these_tasks_were_run_successfully('batches') # To ensure we are on a "TB campaign node".
 		
-		for batch in TB_campaign_bureaucrat.list_subruns_of_task('batches'):
-			run_on_batch_runs(batch, raw_level_f, **kwargs)
+		batches_to_be_processed = TB_campaign_bureaucrat.list_subruns_of_task('batches')
+		
+		with telegram_bot_reporter.report_loop(
+			total_loop_iterations = len(batches_to_be_processed),
+			loop_name = f'{raw_level_f.__name__} on batches of {bureaucrat.pseudopath}',
+		) if telegram_bot_reporter is not None else nullcontext() as reporter:
+			for batch in batches_to_be_processed:
+				run_on_batch_runs(
+					batch_bureaucrat = batch,
+					raw_level_f = raw_level_f,
+					telegram_bot_reporter = telegram_bot_reporter.create_subloop_reporter() if telegram_bot_reporter is not None else None,
+				)
+				reporter.update(1) if telegram_bot_reporter is not None else None
 	
 	if bureaucrat.was_task_run_successfully('batches'):
-		run_on_TB_campaign_batches(bureaucrat, raw_level_f, **kwargs)
+		run_on_TB_campaign_batches(bureaucrat, raw_level_f, telegram_bot_reporter=telegram_bot_reporter)
 	elif bureaucrat.was_task_run_successfully('runs'):
-		run_on_batch_runs(bureaucrat, raw_level_f, **kwargs)
+		run_on_batch_runs(bureaucrat, raw_level_f, telegram_bot_reporter=telegram_bot_reporter)
 	elif bureaucrat.was_task_run_successfully('raw'):
-		raw_level_f(bureaucrat, **kwargs)
+		raw_level_f(bureaucrat)
 	else:
 		raise RuntimeError(f'Dont know how to process run {repr(bureaucrat.run_name)} located in {bureaucrat.path_to_run_directory}')
 
@@ -283,4 +314,18 @@ def run_commands_in_docker_container(command, container_id:str, stdout=None, std
 	return result
 
 if __name__=='__main__':
-	load_setup_configuration_info(RunBureaucrat(Path('/home/msenger/June_test_beam_data/analysis/batch_3')))
+	import my_telegram_bots # Secret tokens from my bots
+	import time
+	
+	def dummy_test_function(run_bureaucrat:RunBureaucrat, a, b):
+		print(f'I am in {run_bureaucrat.pseudopath} with a {a} and b {b}')
+		time.sleep(5)
+	
+	guess_where_how_to_run(
+		bureaucrat = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB_data_analysis/campaigns/subruns/230614_June')),
+		raw_level_f = lambda bureaucrat: dummy_test_function(bureaucrat, a=1, b=2),
+		telegram_bot_reporter = SafeTelegramReporter4Loops(
+			bot_token = my_telegram_bots.robobot.token,
+			chat_id = my_telegram_bots.chat_ids['Robobot TCT setup'],
+		),
+	)

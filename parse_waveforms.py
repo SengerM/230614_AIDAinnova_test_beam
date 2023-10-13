@@ -221,11 +221,14 @@ def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
 			sqlite_database_path = employee.path_to_directory_of_my_task/f'{bureaucrat.run_name}.sqlite',
 			number_of_events_for_which_to_produce_control_plots = NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS,
 		)
+		logging.info(f'Successfully parsed waveforms for {bureaucrat.pseudopath} ✅')
 
 if __name__=='__main__':
 	import argparse
 	import sys
 	from plotly_utils import set_my_template_as_default
+	import my_telegram_bots # Secret tokens from my bots
+	from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
 	
 	set_my_template_as_default()
 	
@@ -255,8 +258,15 @@ if __name__=='__main__':
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
+	def _parse_waveforms(bureaucrat):
+		parse_waveforms(bureaucrat, force=args.force)
+	
 	utils.guess_where_how_to_run(
-		bureaucrat,
-		parse_waveforms,
-		force = args.force
+		bureaucrat = bureaucrat,
+		raw_level_f = _parse_waveforms,
+		# All the below is optional, it can be removed.
+		telegram_bot_reporter = SafeTelegramReporter4Loops(
+			bot_token = my_telegram_bots.robobot.token,
+			chat_id = my_telegram_bots.chat_ids['Robobot TCT setup'],
+		),
 	)
