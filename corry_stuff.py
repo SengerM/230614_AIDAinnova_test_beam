@@ -71,7 +71,7 @@ def corry_mask_noisy_pixels(bureaucrat:RunBureaucrat, corry_container_id:str, fo
 			stderr = subprocess.STDOUT if silent_corry == True else None,
 		)
 		result.check_returncode()
-		logging.info(f'Mask noisy pixels was completed ✅')
+		logging.info(f'Mask noisy pixels was completed for {bureaucrat.pseudopath} ✅')
 
 def corry_align_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	"""Runs the routine to align the telescope using corryvreckan. The
@@ -148,7 +148,7 @@ def corry_align_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, forc
 			stderr = subprocess.STDOUT if silent_corry == True else None,
 		)
 		result.check_returncode()
-		logging.info(f'Telescope alignment was completed ✅')
+		logging.info(f'Telescope alignment was completed for {bureaucrat.pseudopath}✅')
 
 def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	"""Runs the routine to reconstruct the tracks using corryvreckan on
@@ -220,7 +220,7 @@ def corry_reconstruct_tracks_with_telescope(bureaucrat:RunBureaucrat, corry_cont
 				tracks_dumper.append(df)
 		logging.info('CSV to SQLite file conversion successful, CSV file will be removed.')
 		(employee.path_to_directory_of_my_task/'corry_output'/'tracks.csv').unlink()
-		logging.info(f'Tracks were reconstructed ✅')
+		logging.info(f'Tracks were reconstructed for {bureaucrat.pseudopath} ✅')
 
 def corry_do_all_steps_in_some_run(run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	corry_mask_noisy_pixels(bureaucrat=run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
