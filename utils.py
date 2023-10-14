@@ -277,6 +277,16 @@ def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, teleg
 	else:
 		raise RuntimeError(f'Dont know how to process run {repr(bureaucrat.run_name)} located in {bureaucrat.path_to_run_directory}')
 
+def which_kind_of_node(bureaucrat:RunBureaucrat):
+	if bureaucrat.was_task_run_successfully('batches'):
+		return 'campaign'
+	elif bureaucrat.was_task_run_successfully('runs'):
+		return 'batch'
+	elif bureaucrat.was_task_run_successfully('raw'):
+		return 'run'
+	else:
+		return None
+
 def get_run_directory_within_corry_docker(bureaucrat:RunBureaucrat):
 	"""Get the absolute path of the run directory within the corry docker
 	container."""

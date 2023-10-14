@@ -59,7 +59,6 @@ def DUT_distributions_overview(batch:RunBureaucrat, max_events_to_plot:int=int(5
 			with open(employee.path_to_directory_of_my_task/f'{variable}.html', 'w') as ofile:
 				print(html_doc, file=ofile)
 		
-		
 		PAIRS_OF_VARIABLES_FOR_SCATTER_PLOTS = {('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')}
 		save_2D_scatter_plots_here = employee.path_to_directory_of_my_task/'scatter_plots'
 		save_2D_scatter_plots_here.mkdir()
@@ -101,7 +100,7 @@ def DUT_distributions_overview(batch:RunBureaucrat, max_events_to_plot:int=int(5
 					)
 			with open(employee.path_to_directory_of_my_task/f'{y} vs {x}.html', 'w') as ofile:
 				print(html_doc, file=ofile)
-		
+
 if __name__=='__main__':
 	import argparse
 	from plotly_utils import set_my_template_as_default
@@ -128,4 +127,13 @@ if __name__=='__main__':
 	args = parser.parse_args()
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	DUT_distributions_overview(bureaucrat, max_events_to_plot=1111)
+	MAX_EVENTS_TO_PLOT = 1111
+	
+	match utils.which_kind_of_node(bureaucrat):
+		case 'batch':
+			DUT_distributions_overview(bureaucrat, max_events_to_plot=MAX_EVENTS_TO_PLOT)
+		case 'campaign':
+			for batch in bureaucrat.list_subruns_of_task('batches'):
+				DUT_distributions_overview(batch, max_events_to_plot=MAX_EVENTS_TO_PLOT)
+		case _:
+			raise RuntimeError(f'Dont know how to process {bureaucrat.path_to_run_directory}')
