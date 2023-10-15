@@ -17,6 +17,12 @@ def load_analyses_config():
 	analyses = pandas.read_csv('https://docs.google.com/spreadsheets/d/e/2PACX-1vTaR20eM5ZQxtizmZiaAtHooE7hWYfSixSgc1HD5sVNZT_RNxZKmhI09wCEtXEVepjM8NB1n8BUBZnc/pub?gid=0&single=true&output=csv').set_index(['test_beam_campaign','batch_name','DUT_name']).query('DUT_type=="TI-LGAD"')
 	return analyses
 
+def load_this_TILGAD_analysis_config(TI_LGAD_analysis:RunBureaucrat):
+	TB_batch = TI_LGAD_analysis.parent
+	TB_campaign = TB_batch.parent
+	analysis_config = load_analyses_config()
+	return analysis_config.loc[(TB_campaign.run_name,TB_batch.run_name,TI_LGAD_analysis.run_name)]
+
 def setup_TI_LGAD_analysis_within_batch(bureaucrat:RunBureaucrat, DUT_name:str)->RunBureaucrat:
 	"""Setup a directory structure to perform further analysis of a TI-LGAD
 	that is inside a batch pointed by `bureaucrat`. This should be the 
@@ -101,8 +107,7 @@ def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, do_3D_plot:bool=True):
 	with TI_LGAD_analysis.handle_task('plot_tracks_and_hits') as employee:
 		batch = TI_LGAD_analysis.parent
 		
-		analysis_config = load_analyses_config()
-		analysis_config = analysis_config.loc[(batch.parent.run_name,batch.run_name,TI_LGAD_analysis.run_name)] # Retain only data from the current analysis, all the rest is useless here...
+		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
 		
 		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
 		
