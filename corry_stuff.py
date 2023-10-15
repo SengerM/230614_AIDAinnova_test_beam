@@ -275,7 +275,7 @@ def load_tracks_from_batch(batch:RunBureaucrat, only_multiplicity_one:bool=False
 			only_multiplicity_one = only_multiplicity_one,
 		)
 		run_number = int(run.run_name.split('_')[0].replace('run',''))
-		df = pandas.concat({run_number: df}, names=['run_number'])
+		df = pandas.concat({run_number: df}, names=['n_run'])
 		tracks.append(df)
 	return pandas.concat(tracks)
 
