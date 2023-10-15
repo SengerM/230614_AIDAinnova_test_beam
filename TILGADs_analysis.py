@@ -201,26 +201,15 @@ def translate_and_rotate_tracks(tracks:pandas.DataFrame, x_translation:float, y_
 	tracks['Px'], tracks['Py'] = r*numpy.cos(phi+angle_rotation), r*numpy.sin(phi+angle_rotation)
 	return tracks
 
-def transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat, draw_square:bool=False):
-	bureaucrat.check_these_tasks_were_run_successfully(['TI_LGAD_analysis_setup','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
+def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, draw_square:bool=False):
+	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
 	
-	with bureaucrat.handle_task('transformation_for_centering_and_leveling') as employee:
-		analysis_config = load_analysis_config(bureaucrat)
+	with TI_LGAD_analysis.handle_task('transformation_for_centering_and_leveling') as employee:
+		batch = TI_LGAD_analysis.parent
 		
-		logging.info('Reading tracks data...')
-		tracks = load_tracks_for_events_with_track_multiplicity_1(bureaucrat)
+		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
 		
-		logging.info('Reading DUT hits...')
-		DUT_hits = read_parsed_from_waveforms(
-			bureaucrat = bureaucrat,
-			DUT_name = get_DUT_name(bureaucrat),
-			variables = [],
-			additional_SQL_selection = analysis_config['DUT_hit_selection_criterion_SQL_query'],
-		)
-		
-		setup_config = utils.load_setup_configuration_info(bureaucrat)
-		
-		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
 		
 		logging.info('Projecting tracks onto DUT...')
 		projected = utils.project_track_in_z(
@@ -233,7 +222,18 @@ def transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat, draw_squ
 			columns = ['Px','Py','Pz'],
 			index = tracks.index,
 		)
-		tracks = projected
+		tracks = tracks.join(projected)
+		
+		DUT_hits = read_parsed_from_waveforms_from_batch(
+			batch = batch,
+			DUT_name = TI_LGAD_analysis.run_name,
+			variables = [], # No need for variables, only need to know which ones are hits.
+			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		
+		setup_config = utils.load_setup_configuration_info(batch)
+		
+		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
 		
 		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
 		
@@ -243,15 +243,15 @@ def transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat, draw_squ
 		logging.info('Applying transformation to tracks to center and align DUT...')
 		tracks = translate_and_rotate_tracks(
 			tracks = tracks,
-			x_translation = analysis_config['transformation_for_centering_and_leveling']['x_translation'],
-			y_translation = analysis_config['transformation_for_centering_and_leveling']['y_translation'],
-			angle_rotation = analysis_config['transformation_for_centering_and_leveling']['rotation_around_z_deg']/180*numpy.pi,
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
 		)
 		
 		logging.info('Plotting tracks and hits on DUT...')
 		fig = px.scatter(
 			tracks.reset_index(),
-			title = f'Tracks projected on the DUT after transformation<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
+			title = f'Tracks projected on the DUT after transformation<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
 			x = 'Px',
 			y = 'Py',
 			color = 'DUT_name_rowcol',
@@ -279,10 +279,6 @@ def transformation_for_centering_and_leveling(bureaucrat:RunBureaucrat, draw_squ
 			employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
 			include_plotlyjs = 'cdn',
 		)
-		
-		logging.info('Saving transformation parameters into a file...')
-		with open(employee.path_to_directory_of_my_task/'transformation_parameters.json', 'w') as ofile:
-			json.dump(analysis_config['transformation_for_centering_and_leveling'], ofile)
 
 def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float):
 	if set(tracks.index.names) != set(DUT_hits.names):
