@@ -220,6 +220,8 @@ def read_parsed_from_waveforms_from_run(TB_run:RunBureaucrat, DUT_name:str, vari
 def read_parsed_from_waveforms_from_batch(batch:RunBureaucrat, DUT_name:str, variables:list=['Amplitude (V)'], additional_SQL_selection:str=None, n_events:int=None):
 	batch.check_these_tasks_were_run_successfully('runs')
 	
+	logging.info(f'Reading parsed from waveforms from {batch.pseudopath} for DUT_name={repr(DUT_name)} and variables {variables}...')
+	
 	runs = batch.list_subruns_of_task('runs')
 	data = []
 	for run in runs:

@@ -242,7 +242,7 @@ def load_tracks_from_run(bureaucrat:RunBureaucrat, only_multiplicity_one:bool=Fa
 	
 	SQL_query = 'SELECT * FROM dataframe_table'
 	if only_multiplicity_one == True:
-		SQL_query += 'GROUP BY n_event HAVING COUNT(n_track) = 1',
+		SQL_query += ' GROUP BY n_event HAVING COUNT(n_track) = 1'
 	tracks = pandas.read_sql(
 		SQL_query,
 		con = sqlite3.connect(bureaucrat.path_to_directory_of_task('corry_reconstruct_tracks_with_telescope')/'tracks.sqlite'),
@@ -256,12 +256,28 @@ def load_tracks_from_run(bureaucrat:RunBureaucrat, only_multiplicity_one:bool=Fa
 	
 	if only_multiplicity_one == True:
 		# Check that the track multiplicity is indeed 1 for all events loaded:
-		n_tracks_in_event = tracks['is_fitted'].groupby(['n_run','n_event']).count()
+		n_tracks_in_event = tracks['is_fitted'].groupby(['n_event']).count()
 		n_tracks_in_event.name = 'n_tracks_in_event'
 		if set(n_tracks_in_event) != {1} or len(tracks) == 0:
 			raise RuntimeError(f'Failed to load tracks only from events with track multiplicity 1...')
 	
 	return tracks
+
+def load_tracks_from_batch(batch:RunBureaucrat, only_multiplicity_one:bool=False):
+	batch.check_these_tasks_were_run_successfully('runs')
+	
+	logging.info(f'Reading tracks from {batch.pseudopath}...')
+	
+	tracks = []
+	for run in batch.list_subruns_of_task('runs'):
+		df = load_tracks_from_run(
+			bureaucrat = run,
+			only_multiplicity_one = only_multiplicity_one,
+		)
+		run_number = int(run.run_name.split('_')[0].replace('run',''))
+		df = pandas.concat({run_number: df}, names=['run_number'])
+		tracks.append(df)
+	return pandas.concat(tracks)
 
 if __name__ == '__main__':
 	import sys

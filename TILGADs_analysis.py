@@ -7,15 +7,15 @@ import sqlite3
 import plotly.express as px
 import numpy
 import plotly_utils
-from corry_stuff import load_tracks_from_run
+from corry_stuff import load_tracks_from_batch
 import json
 import warnings
 from parse_waveforms import read_parsed_from_waveforms_from_batch
 
-def load_analysis_config(bureaucrat:RunBureaucrat):
-	bureaucrat.check_these_tasks_were_run_successfully('TI_LGAD_analysis_setup')
-	with open(bureaucrat.path_to_run_directory/'analysis_configuration.json', 'r') as ifile:
-		return json.load(ifile)
+def load_analyses_config():
+	logging.info(f'Reading analyses config from the cloud...')
+	analyses = pandas.read_csv('https://docs.google.com/spreadsheets/d/e/2PACX-1vTaR20eM5ZQxtizmZiaAtHooE7hWYfSixSgc1HD5sVNZT_RNxZKmhI09wCEtXEVepjM8NB1n8BUBZnc/pub?gid=0&single=true&output=csv').set_index(['test_beam_campaign','batch_name','DUT_name']).query('DUT_type=="TI-LGAD"')
+	return analyses
 
 def setup_TI_LGAD_analysis_within_batch(bureaucrat:RunBureaucrat, DUT_name:str)->RunBureaucrat:
 	"""Setup a directory structure to perform further analysis of a TI-LGAD
@@ -95,26 +95,16 @@ def plot_DUT_distributions(TI_LGAD_analysis_bureaucrat:RunBureaucrat):
 				include_plotlyjs = 'cdn',
 			)
 
-def plot_tracks_and_hits(bureaucrat:RunBureaucrat, do_3D_plot:bool=True):
-	bureaucrat.check_these_tasks_were_run_successfully(['TI_LGAD_analysis_setup','corry_reconstruct_tracks_with_telescope','parse_waveforms'])
+def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, do_3D_plot:bool=True):
+	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
 	
-	with bureaucrat.handle_task('plot_tracks_and_hits') as employee:
-		analysis_config = load_analysis_config(bureaucrat)
+	with TI_LGAD_analysis.handle_task('plot_tracks_and_hits') as employee:
+		batch = TI_LGAD_analysis.parent
 		
-		logging.info('Reading tracks data...')
-		tracks = load_tracks_for_events_with_track_multiplicity_1(bureaucrat)
+		analysis_config = load_analyses_config()
+		analysis_config = analysis_config.loc[(batch.parent.run_name,batch.run_name,TI_LGAD_analysis.run_name)] # Retain only data from the current analysis, all the rest is useless here...
 		
-		logging.info('Reading DUT hits...')
-		DUT_hits = read_parsed_from_waveforms(
-			bureaucrat = bureaucrat,
-			DUT_name = get_DUT_name(bureaucrat),
-			variables = [],
-			additional_SQL_selection = analysis_config['DUT_hit_selection_criterion_SQL_query'],
-		)
-		
-		setup_config = utils.load_setup_configuration_info(bureaucrat)
-		
-		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
 		
 		logging.info('Projecting tracks onto DUT...')
 		projected = utils.project_track_in_z(
@@ -129,6 +119,17 @@ def plot_tracks_and_hits(bureaucrat:RunBureaucrat, do_3D_plot:bool=True):
 		)
 		tracks = tracks.join(projected)
 		
+		DUT_hits = read_parsed_from_waveforms_from_batch(
+			batch = batch,
+			DUT_name = TI_LGAD_analysis.run_name,
+			variables = [], # No need for variables, only need to know which ones are hits.
+			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		
+		setup_config = utils.load_setup_configuration_info(batch)
+		
+		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		
 		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
 		
 		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
@@ -137,7 +138,7 @@ def plot_tracks_and_hits(bureaucrat:RunBureaucrat, do_3D_plot:bool=True):
 		logging.info('Plotting tracks and hits on DUT...')
 		fig = px.scatter(
 			tracks.reset_index(),
-			title = f'Tracks projected on the DUT<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
+			title = f'Tracks projected on the DUT<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
 			x = 'Px',
 			y = 'Py',
 			color = 'DUT_name_rowcol',
@@ -168,7 +169,7 @@ def plot_tracks_and_hits(bureaucrat:RunBureaucrat, do_3D_plot:bool=True):
 			
 			fig = px.line_3d(
 				tracks_for_plotly.reset_index(drop=False).query('DUT_name_rowcol != "no hit"'),
-				title = f'Tracks<br><sup>{utils.which_test_beam_campaign(bureaucrat)}/{bureaucrat.path_to_run_directory.parts[-4]}/{bureaucrat.run_name}</sup>',
+				title = f'Tracks<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
 				x = 'x',
 				y = 'y',
 				z = 'z',

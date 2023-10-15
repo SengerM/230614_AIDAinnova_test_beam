@@ -97,7 +97,8 @@ CAENs_CHANNELS_MAPPING_TO_INTEGERS = pandas.DataFrame(
 	}
 )
 
-def load_setup_configuration_info(bureaucrat:RunBureaucrat)->pandas.DataFrame:
+def load_setup_configuration_info(batch:RunBureaucrat)->pandas.DataFrame:
+	bureaucrat = batch
 	bureaucrat.check_these_tasks_were_run_successfully(['runs','batch_info'])
 	if not all([b.was_task_run_successfully('parse_waveforms') for b in bureaucrat.list_subruns_of_task('runs')]):
 		raise RuntimeError(f'To load the setup configuration it is needed that all of the runs of the batch have had the `parse_waveforms` task performed on them, but does not seem to be the case')
@@ -284,6 +285,8 @@ def which_kind_of_node(bureaucrat:RunBureaucrat):
 		return 'batch'
 	elif bureaucrat.was_task_run_successfully('raw'):
 		return 'run'
+	elif bureaucrat.was_task_run_successfully('this_is_a_TI-LGAD_analysis'):
+		return 'TI-LGAD analysis'
 	else:
 		return None
 
