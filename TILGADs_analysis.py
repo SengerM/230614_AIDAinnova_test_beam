@@ -595,11 +595,6 @@ if __name__ == '__main__':
 	
 	set_my_template_as_default()
 	
-	execute_all_analyses()
-	
-	a
-	
-	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
 		metavar = 'path', 
@@ -651,6 +646,13 @@ if __name__ == '__main__':
 		dest = 'enable_3D_tracks_plot',
 		action = 'store_true'
 	)
+	parser.add_argument(
+		'--force',
+		help = 'If this flag is passed, it will force whatever has to be done, meaning old data will be deleted.',
+		required = False,
+		dest = 'force',
+		action = 'store_true'
+	)
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
@@ -663,7 +665,7 @@ if __name__ == '__main__':
 		if args.transformation_for_centering_and_leveling == True:
 			transformation_for_centering_and_leveling(bureaucrat, draw_square=True)
 		if args.efficiency_vs_distance_calculation == True:
-			efficiency_vs_distance_calculation(bureaucrat)
+			efficiency_vs_distance_calculation(bureaucrat, force=args.force)
 	elif args.setup_analysis_for_DUT != 'None':
 		setup_TI_LGAD_analysis_within_batch(
 			bureaucrat, 
