@@ -11,6 +11,7 @@ from corry_stuff import load_tracks_from_batch
 import json
 import warnings
 from parse_waveforms import read_parsed_from_waveforms_from_batch
+import multiprocessing
 
 def load_analyses_config():
 	logging.info(f'Reading analyses config from the cloud...')
@@ -23,16 +24,16 @@ def load_this_TILGAD_analysis_config(TI_LGAD_analysis:RunBureaucrat):
 	analysis_config = load_analyses_config()
 	return analysis_config.loc[(TB_campaign.run_name,TB_batch.run_name,TI_LGAD_analysis.run_name)]
 
-def setup_TI_LGAD_analysis_within_batch(bureaucrat:RunBureaucrat, DUT_name:str)->RunBureaucrat:
+def setup_TI_LGAD_analysis_within_batch(batch:RunBureaucrat, DUT_name:str)->RunBureaucrat:
 	"""Setup a directory structure to perform further analysis of a TI-LGAD
-	that is inside a batch pointed by `bureaucrat`. This should be the 
+	that is inside a batch pointed by `batch`. This should be the 
 	first step before starting a TI-LGAD analysis."""
-	bureaucrat.check_these_tasks_were_run_successfully(['runs','batch_info'])
+	batch.check_these_tasks_were_run_successfully(['runs','batch_info'])
 	
-	with bureaucrat.handle_task('TI-LGADs_analyses', drop_old_data=False) as employee:
-		setup_configuration_info = utils.load_setup_configuration_info(bureaucrat)
+	with batch.handle_task('TI-LGADs_analyses', drop_old_data=False) as employee:
+		setup_configuration_info = utils.load_setup_configuration_info(batch)
 		if DUT_name not in set(setup_configuration_info['DUT_name']):
-			raise RuntimeError(f'DUT_name {repr(DUT_name)} not present within the set of DUTs in {bureaucrat.pseudopath}, which is {set(setup_configuration_info["DUT_name"])}')
+			raise RuntimeError(f'DUT_name {repr(DUT_name)} not present within the set of DUTs in {batch.pseudopath}, which is {set(setup_configuration_info["DUT_name"])}')
 		
 		try:
 			TILGAD_bureaucrat = employee.create_subrun(DUT_name)
@@ -41,7 +42,7 @@ def setup_TI_LGAD_analysis_within_batch(bureaucrat:RunBureaucrat, DUT_name:str)-
 			logging.info(f'Directory structure for TI-LGAD analysis was created in {TILGAD_bureaucrat.pseudopath} ')
 		except RuntimeError as e: # This will happen if the run already existed beforehand.
 			if 'Cannot create run' in str(e):
-				TILGAD_bureaucrat = [b for b in bureaucrat.list_subruns_of_task('TI-LGADs_analyses') if b.run_name==DUT_name][0]
+				TILGAD_bureaucrat = [b for b in batch.list_subruns_of_task('TI-LGADs_analyses') if b.run_name==DUT_name][0]
 		
 	return TILGAD_bureaucrat
 
@@ -329,10 +330,15 @@ def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, 
 	
 	return error_down, error_up
 
-def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat):
+def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
 	
-	with TI_LGAD_analysis.handle_task('efficiency_vs_distance_calculation') as employee:
+	TASK_NAME = 'efficiency_vs_distance_calculation'
+	
+	if force == False and TI_LGAD_analysis.was_task_run_successfully(TASK_NAME):
+		return
+	
+	with TI_LGAD_analysis.handle_task(TASK_NAME) as employee:
 		batch = TI_LGAD_analysis.parent
 		
 		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
@@ -547,143 +553,33 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat):
 					include_plotlyjs = 'cdn',
 				)
 
-def setup_efficiency_vs_distance_analysis(bureaucrat, amplitude_threshold:float, DUT_z_position:float, x_translation:float, y_translation:float, rotation_around_z_deg:float, analyze_these_pixels:str, window_size_meters:float, window_step_meters:float, if_exists='raise error')->RunBureaucrat:
-	PIXEL_SIZE = 250e-6
-	ROI_DISTANCE_OFFSET = 50e-6
-	ROI_WIDTH = PIXEL_SIZE/3
-	PIXEL_DEPENDENT_SETTINGS = {
-		'top row': dict(
-			project_on = 'x',
-			ROI = dict(
-				x_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
-				x_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
-				y_min = PIXEL_SIZE/2-ROI_WIDTH/2,
-				y_max = PIXEL_SIZE/2+ROI_WIDTH/2,
-			),
-			left_pixel_rowcol = [0,0],
-			right_pixel_rowcol = [0,1],
-		),
-		'bottom row': dict(
-			project_on = 'x',
-			ROI = dict(
-				x_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
-				x_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
-				y_min = -PIXEL_SIZE/2-ROI_WIDTH/2,
-				y_max = -PIXEL_SIZE/2+ROI_WIDTH/2,
-				
-			),
-			left_pixel_rowcol = [1,0],
-			right_pixel_rowcol = [1,1],
-		),
-		'left column': dict(
-			project_on = 'y',
-			ROI = dict(
-				y_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
-				y_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
-				x_min = -PIXEL_SIZE/2-ROI_WIDTH/2,
-				x_max = -PIXEL_SIZE/2+ROI_WIDTH/2,
-			),
-			left_pixel_rowcol = [1,0],
-			right_pixel_rowcol = [0,0],
-		),
-		'right column': dict(
-			project_on = 'y',
-			ROI = dict(
-				y_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
-				y_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
-				x_min = PIXEL_SIZE/2-ROI_WIDTH/2,
-				x_max = PIXEL_SIZE/2+ROI_WIDTH/2,
-			),
-			left_pixel_rowcol = [1,1],
-			right_pixel_rowcol = [0,1],
-		),
-	}
-	
-	if analyze_these_pixels not in PIXEL_DEPENDENT_SETTINGS.keys():
-		raise ValueError(f'`analyze_these_pixels` must be in {set(PIXEL_DEPENDENT_SETTINGS.keys())}, but received {repr(analyze_these_pixels)}')
-	
-	bureaucrat.check_these_tasks_were_run_successfully('TI_LGAD_analysis_setup')
-	
-	analysis_config = {
-		"DUT_hit_selection_criterion_SQL_query": f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{amplitude_threshold}",
-		"DUT_z_position": DUT_z_position,
-		"transformation_for_centering_and_leveling": {
-			"x_translation": x_translation,
-			"y_translation": y_translation,
-			"rotation_around_z_deg": rotation_around_z_deg,
-		},
-		"analysis_name": f"{analyze_these_pixels.replace(' ','_')}_{int(window_size_meters*1e6)}um_{int(window_step_meters*1e6)}um",
-		"project_on": PIXEL_DEPENDENT_SETTINGS[analyze_these_pixels]['project_on'],
-		"ROI": PIXEL_DEPENDENT_SETTINGS[analyze_these_pixels]['ROI'],
-		"left_pixel_rowcol": PIXEL_DEPENDENT_SETTINGS[analyze_these_pixels]['left_pixel_rowcol'],
-		"right_pixel_rowcol": PIXEL_DEPENDENT_SETTINGS[analyze_these_pixels]['right_pixel_rowcol'],
-		"rolling_window_size": window_size_meters,
-		"calculation_step": window_step_meters
-	}
-	
-	with bureaucrat.handle_task('efficiency_vs_distance', drop_old_data=False) as employee:
-		subrun = employee.create_subrun(analysis_config['analysis_name'], if_exists=if_exists)
-		with subrun.handle_task('efficiency_vs_distance_analysis_config') as employee2:
-			with open(employee2.path_to_directory_of_my_task/'analysis_config.json', 'w') as ofile:
-				json.dump(analysis_config, ofile)
-	return subrun
+def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat):
+	plot_DUT_distributions(TI_LGAD_analysis)
+	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False)
+	transformation_for_centering_and_leveling(TI_LGAD_analysis)
+	efficiency_vs_distance_calculation(TI_LGAD_analysis)
 
-def setup_analyses_from_GoogleSpreadsheet(path_to_AIDAinnova_test_beams:Path):
-	analyses = pandas.read_csv('https://docs.google.com/spreadsheets/d/e/2PACX-1vTaR20eM5ZQxtizmZiaAtHooE7hWYfSixSgc1HD5sVNZT_RNxZKmhI09wCEtXEVepjM8NB1n8BUBZnc/pub?gid=0&single=true&output=csv').set_index(['test_beam_campaign','batch_name','DUT_name']).query('DUT_type=="TI-LGAD"')
+def execute_all_analyses():
+	TB_bureaucrat = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB'))
 	
-	PIXEL_GROUPS = {'top row','bottom row','left column','right column'}
+	analyses_config = load_analyses_config()
 	
-	analyses = analyses.query(' or '.join([f'`{_}` == True' for _ in PIXEL_GROUPS]))
+	# First of all, create directories in which to perform the data analysis if they don't exist already...
+	for (campaign_name,batch_name,DUT_name),_ in analyses_config.iterrows():
+		TI_LGAD_analysis = RunBureaucrat(TB_bureaucrat.path_to_run_directory/'campaigns/subruns'/campaign_name/'batches/subruns'/batch_name/'TI-LGADs_analyses/subruns'/DUT_name) # This is ugly, but currently I have no other way of getting it...
+		
+		if TI_LGAD_analysis.exists() == False and any([analyses_config.loc[(campaign_name,batch_name,DUT_name),_]==True for _ in {'top_row','bottom_row','left_column','right_column'}]):
+			setup_TI_LGAD_analysis_within_batch(TI_LGAD_analysis.parent, TI_LGAD_analysis.run_name)
 	
-	tmp = []
-	for pg in PIXEL_GROUPS:
-		df = analyses.query(f'`{pg}` == True').drop(columns=sorted(PIXEL_GROUPS))
-		df['pixel_group'] = pg
-		tmp.append(df)
-	analyses = pandas.concat(tmp).set_index('pixel_group', append=True).sort_index()
-	
-	for test_beam_campaign, test_beam_campaign_analyses in analyses.groupby('test_beam_campaign'):
-		for batch_name, this_batch_analyses in test_beam_campaign_analyses.groupby('batch_name'):
-			batch_bureaucrat = RunBureaucrat(path_to_AIDAinnova_test_beams/test_beam_campaign/'analysis'/batch_name)
-			for DUT_name, this_DUT_analyses in this_batch_analyses.groupby('DUT_name'):
-				try:
-					setup_TI_LGAD_analysis(
-						bureaucrat = batch_bureaucrat,
-						DUT_name = DUT_name,
-					)
-					logging.info(f'Analysis for {repr(DUT_name)} was created')
-				except RuntimeError as e:
-					if all([_ in repr(e) for _ in {'Cannot create run','because it already exists'}]):
-						logging.info(f'Analysis for {repr(DUT_name)} already exists')
-					else:
-						raise e
-				
-				DUT_bureaucrat = [_ for _ in batch_bureaucrat.list_subruns_of_task('TI-LGADs_analyses') if _.run_name==DUT_name][0]
-				for pixel_group, analysis_settings in this_DUT_analyses.groupby('pixel_group'):
-					analysis_bureaucrat = setup_efficiency_vs_distance_analysis(
-						bureaucrat = DUT_bureaucrat,
-						amplitude_threshold = analysis_settings['Amplitude threshold (V)'].values[0],
-						DUT_z_position = analysis_settings['DUT_z_position'].values[0],
-						x_translation = analysis_settings['x_translation'].values[0],
-						y_translation = analysis_settings['y_translation'].values[0],
-						rotation_around_z_deg = analysis_settings['rotation_around_z_deg'].values[0],
-						analyze_these_pixels = pixel_group,
-						window_size_meters = 22e-6, 
-						window_step_meters = 5e-6,
-						if_exists = 'override',
-					)
-					logging.info(f'Analysis for "{test_beam_campaign}/{batch_name}/{DUT_name}/{pixel_group}" has been created in {analysis_bureaucrat.path_to_run_directory}')
-
-def execute_all_analyses(path_to_AIDAinnova_test_beams:Path):
-	for test_beam_campaign in {'230614_June','230830_August'}:
-		for p in (path_to_AIDAinnova_test_beams/test_beam_campaign/'analysis').iterdir():
-			batch_bureaucrat = RunBureaucrat(p)
-			for TILGAD_bureaucrat in batch_bureaucrat.list_subruns_of_task('TI-LGADs_analyses'):
-				for analysis_bureaucrat in TILGAD_bureaucrat.list_subruns_of_task('efficiency_vs_distance'):
-					current_analysis_pseudopath = f'{test_beam_campaign}/{batch_bureaucrat.run_name}/{TILGAD_bureaucrat.run_name}/{analysis_bureaucrat.run_name}'
-					logging.info(f'Starting with {current_analysis_pseudopath}...')
-					efficiency_vs_distance_calculation(analysis_bureaucrat)
-					logging.info(f'Finished {current_analysis_pseudopath} ✅')
+	for campaign in TB_bureaucrat.list_subruns_of_task('campaigns'):
+		if 'august' in  campaign.run_name.lower():
+			continue
+		for batch in campaign.list_subruns_of_task('batches'):
+			with multiprocessing.Pool(5) as p:
+				p.map(
+					run_all_analyses_in_a_TILGAD, 
+					[TI_LGAD_analysis for TI_LGAD_analysis in batch.list_subruns_of_task('TI-LGADs_analyses')],
+				)
 
 if __name__ == '__main__':
 	import sys
@@ -698,6 +594,11 @@ if __name__ == '__main__':
 	)
 	
 	set_my_template_as_default()
+	
+	execute_all_analyses()
+	
+	a
+	
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
@@ -753,15 +654,6 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
-	
-	# ~ setup_analyses_from_GoogleSpreadsheet(
-		# ~ path_to_AIDAinnova_test_beams = Path('/media/msenger/230829_gray/AIDAinnova_test_beams'),
-	# ~ )
-	# ~ execute_all_analyses(
-		# ~ path_to_AIDAinnova_test_beams = Path('/media/msenger/230829_gray/AIDAinnova_test_beams'),
-	# ~ )
-	
-	# ~ a
 	
 	if bureaucrat.was_task_run_successfully('this_is_a_TI-LGAD_analysis'):
 		if args.plot_DUT_distributions == True:
