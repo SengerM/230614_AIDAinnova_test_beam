@@ -5,6 +5,7 @@ import logging
 import pandas
 import sqlite3
 import plotly.express as px
+import plotly.graph_objects as go
 import numpy
 import plotly_utils
 from corry_stuff import load_tracks_from_batch
@@ -23,6 +24,18 @@ def load_this_TILGAD_analysis_config(TI_LGAD_analysis:RunBureaucrat):
 	TB_campaign = TB_batch.parent
 	analysis_config = load_analyses_config()
 	return analysis_config.loc[(TB_campaign.run_name,TB_batch.run_name,TI_LGAD_analysis.run_name)]
+
+def project_tracks(tracks:pandas.DataFrame, z:float):
+	projected = utils.project_track_in_z(
+		A = tracks[[f'A{_}' for _ in ['x','y','z']]].to_numpy().T,
+		B = tracks[[f'B{_}' for _ in ['x','y','z']]].to_numpy().T,
+		z = z,
+	).T
+	return pandas.DataFrame(
+		projected,
+		columns = ['Px','Py','Pz'],
+		index = tracks.index,
+	)
 
 def setup_TI_LGAD_analysis_within_batch(batch:RunBureaucrat, DUT_name:str)->RunBureaucrat:
 	"""Setup a directory structure to perform further analysis of a TI-LGAD
@@ -132,9 +145,20 @@ def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, do_3D_plot:bool=True):
 			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
 		)
 		
+		aux_DUT_hits = read_parsed_from_waveforms_from_batch(
+			batch = batch,
+			DUT_name = 'TI122',
+			variables = [], # No need for variables, only need to know which ones are hits.
+			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		
 		setup_config = utils.load_setup_configuration_info(batch)
 		
 		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		aux_DUT_hits = aux_DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		
+		aux_DUT_hits = aux_DUT_hits.query('DUT_name_rowcol in ["TI122 (0,0)","TI122 (1,0)"]')
+		DUT_hits = utils.select_by_multiindex(DUT_hits, aux_DUT_hits.reset_index(['n_CAEN','CAEN_n_channel']).index)
 		
 		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
 		
@@ -194,15 +218,22 @@ def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, do_3D_plot:bool=True):
 				include_plotlyjs = 'cdn',
 			)
 
-def translate_and_rotate_tracks(tracks:pandas.DataFrame, x_translation:float, y_translation:float, angle_rotation:float):
+def translate_and_then_rotate(points:pandas.DataFrame, x_translation:float, y_translation:float, angle_rotation:float):
+	"""Apply a translation followed by a rotation to the points.
+	
+	Arguments
+	---------
+	points: pandas.DataFrame
+		A data frame of the form 
+	"""
 	for xy,translation in {'x':x_translation,'y':y_translation}.items():
-			tracks[f'P{xy}'] += translation
-	r = (tracks['Px']**2 + tracks['Py']**2)**.5
-	phi = numpy.arctan2(tracks['Py'], tracks['Px'])
-	tracks['Px'], tracks['Py'] = r*numpy.cos(phi+angle_rotation), r*numpy.sin(phi+angle_rotation)
-	return tracks
+			points[xy] += translation
+	r = (points['x']**2 + points['y']**2)**.5
+	phi = numpy.arctan2(points['y'], points['x'])
+	points['x'], points['y'] = r*numpy.cos(phi+angle_rotation), r*numpy.sin(phi+angle_rotation)
+	return points
 
-def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, draw_square:bool=False):
+def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, draw_square:bool=True):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
 	
 	with TI_LGAD_analysis.handle_task('transformation_for_centering_and_leveling') as employee:
@@ -213,16 +244,7 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
 		
 		logging.info('Projecting tracks onto DUT...')
-		projected = utils.project_track_in_z(
-			A = tracks[[f'A{_}' for _ in ['x','y','z']]].to_numpy().T,
-			B = tracks[[f'B{_}' for _ in ['x','y','z']]].to_numpy().T,
-			z = analysis_config['DUT_z_position'],
-		).T
-		projected = pandas.DataFrame(
-			projected,
-			columns = ['Px','Py','Pz'],
-			index = tracks.index,
-		)
+		projected = project_tracks(tracks, z=analysis_config['DUT_z_position'])
 		tracks = tracks.join(projected)
 		
 		DUT_hits = read_parsed_from_waveforms_from_batch(
@@ -237,7 +259,6 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
 		
 		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
-		
 		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
 		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
 		
@@ -278,6 +299,132 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 		)
 		fig.write_html(
 			employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
+			include_plotlyjs = 'cdn',
+		)
+
+def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat):
+	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
+	
+	with TI_LGAD_analysis.handle_task('estimate_fraction_of_misreconstructed_tracks') as employee:
+		batch = TI_LGAD_analysis.parent
+		
+		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
+		
+		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
+		
+		logging.info('Projecting tracks onto DUT...')
+		projected = project_tracks(tracks, z=analysis_config['DUT_z_position'])
+		tracks = tracks.join(projected)
+		
+		DUT_hits = read_parsed_from_waveforms_from_batch(
+			batch = batch,
+			DUT_name = TI_LGAD_analysis.run_name,
+			variables = [], # No need for variables, only need to know which ones are hits.
+			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		DUT_hits['DUT_hit'] = True
+		
+		setup_config = utils.load_setup_configuration_info(batch)
+		
+		tracks = tracks.join(DUT_hits['DUT_hit'])
+		tracks['DUT_hit'] = tracks['DUT_hit'].fillna(False)
+		
+		logging.info('Applying transformation to tracks to center and align DUT...')
+		tracks[['Px_transformed','Py_transformed']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		DUT_ROI_SIZE = 566e-6
+		tracks['is_inside_DUT_ROI'] = False # Initialize.
+		tracks.loc[(tracks['Px_transformed']>=-DUT_ROI_SIZE/2) & (tracks['Px_transformed']<DUT_ROI_SIZE/2) & (tracks['Py_transformed']>=-DUT_ROI_SIZE/2) & (tracks['Py_transformed']<DUT_ROI_SIZE/2), 'is_inside_DUT_ROI'] = True
+		
+		# To estimate the total area, I use the tracks data before the transformation (rotation and translation) in which the total area should be a rectangle aligned with x and y, and then apply the transformation wherever needed.
+		total_area_corners = pandas.DataFrame(
+			{
+				'x': [tracks['Px'].min(), tracks['Px'].max(), tracks['Px'].max(), tracks['Px'].min()],
+				'y': [tracks['Py'].min(), tracks['Py'].min(), tracks['Py'].max(), tracks['Py'].max()],
+				'which_corner': ['bottom_left','bottom_right','top_right','top_left'],
+			},
+		).set_index('which_corner')
+		total_area_corners[['x_transformed','y_transformed']] = translate_and_then_rotate(
+			points = total_area_corners,
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi/4,
+		)
+		
+		number_of_defected_tracks_outside_DUT_ROI = len(tracks.query('DUT_hit==True and is_inside_DUT_ROI==False'))
+		total_number_of_DUT_hits = len(tracks.query('DUT_hit==True'))
+		total_area = (total_area_corners.loc['bottom_right','x']-total_area_corners.loc['bottom_left','x'])*(total_area_corners.loc['top_left','y']-total_area_corners.loc['bottom_left','y'])
+		DUT_ROI_area = DUT_ROI_SIZE**2
+		
+		fraction_of_missreconstructed_tracks = number_of_defected_tracks_outside_DUT_ROI/total_number_of_DUT_hits*total_area/(total_area-DUT_ROI_area)
+		
+		results = pandas.Series(
+			{
+				'number_of_defected_tracks_outside_DUT_ROI': number_of_defected_tracks_outside_DUT_ROI,
+				'total_number_of_DUT_hits': total_number_of_DUT_hits,
+				'total_area (m^2)': total_area,
+				'DUT_ROI_area (m^2)': DUT_ROI_area,
+				'fraction_of_missreconstructed_tracks': fraction_of_missreconstructed_tracks,
+			},
+			name = 'results'
+		)
+		utils.save_dataframe(results, 'results', employee.path_to_directory_of_my_task)
+		
+		logging.info('Plotting tracks and hits on DUT...')
+		fig = px.scatter(
+			tracks.sort_values('DUT_hit', ascending=True).reset_index().query('DUT_hit==True'),
+			title = f'Tracks that hit the DUT<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
+			x = 'Px_transformed',
+			y = 'Py_transformed',
+			color = 'is_inside_DUT_ROI',
+			hover_data = ['n_run','n_event'],
+			labels = {
+				'Px_transformed': 'x (m)',
+				'Py_transformed': 'y (m)',
+			},
+		)
+		fig.update_yaxes(
+			scaleanchor = "x",
+			scaleratio = 1,
+		)
+		for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
+			method(0)
+		fig.add_shape(
+			type = "rect",
+			x0 = -250e-6, 
+			y0 = -250e-6, 
+			x1 = 250e-6, 
+			y1 = 250e-6,
+		)
+		fig.add_shape(
+			type = "rect",
+			x0 = -DUT_ROI_SIZE/2,
+			y0 = -DUT_ROI_SIZE/2,
+			x1 = DUT_ROI_SIZE/2,
+			y1 = DUT_ROI_SIZE/2,
+			line=dict(
+				dash = "dash",
+			),
+		)
+		fig.add_trace(
+			go.Scatter(
+				x = [total_area_corners.loc[corner,'x_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'x_transformed']],
+				y = [total_area_corners.loc[corner,'y_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'y_transformed']],
+				mode = 'lines',
+				line = dict(
+					color = 'black',
+				),
+				showlegend = False,
+				hoverinfo = 'skip',
+			)
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'DUT_hits.html',
 			include_plotlyjs = 'cdn',
 		)
 
@@ -656,6 +803,15 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
+	
+	estimate_fraction_of_misreconstructed_tracks(bureaucrat)
+	
+	AAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAA
 	
 	if bureaucrat.was_task_run_successfully('this_is_a_TI-LGAD_analysis'):
 		if args.plot_DUT_distributions == True:
