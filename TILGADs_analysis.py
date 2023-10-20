@@ -355,10 +355,13 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 		
 		logging.info(f'Calculating probability that corry fails...')
 		data = []
-		for DUT_ROI_size in numpy.linspace(444e-6,2222e-6,33):
+		for DUT_ROI_size in numpy.linspace(111e-6,2222e-6,33):
 			tracks_for_which_DUT_has_a_signal = tracks.query('DUT_hit==True')
-			tracks_for_which_DUT_has_a_signal['is_inside_DUT_ROI'] = False # Initialize.
-			tracks_for_which_DUT_has_a_signal.loc[(tracks_for_which_DUT_has_a_signal['Px_transformed']>=-DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Px_transformed']<DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Py_transformed']>=-DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Py_transformed']<DUT_ROI_size/2), 'is_inside_DUT_ROI'] = True
+			with warnings.catch_warnings():
+				warnings.filterwarnings("ignore")
+				# The previous is to get rid of the annoying warning "A value is trying to be set on a copy of a slice from a DataFrame."
+				tracks_for_which_DUT_has_a_signal['is_inside_DUT_ROI'] = False # Initialize.
+				tracks_for_which_DUT_has_a_signal.loc[(tracks_for_which_DUT_has_a_signal['Px_transformed']>=-DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Px_transformed']<DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Py_transformed']>=-DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Py_transformed']<DUT_ROI_size/2), 'is_inside_DUT_ROI'] = True
 			n_tracks_outside_DUT = len(tracks_for_which_DUT_has_a_signal.query('is_inside_DUT_ROI==False'))
 			n_tracks = len(tracks_for_which_DUT_has_a_signal)
 			n_tracks_within_DUT = len(tracks_for_which_DUT_has_a_signal.query('is_inside_DUT_ROI==True'))
@@ -441,13 +444,44 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			
 		data = pandas.DataFrame.from_records(data)
 		
+		dydx = data['probability_corry_fails'].diff()/data['DUT_ROI_size (m)'].diff()
+		probability_corry_fails_final_value = data.loc[dydx**2<22**2,'probability_corry_fails'].mean()
+		probability_corry_fails_final_value_error = (data.loc[dydx**2<22**2,'probability_corry_fails'].std()**2 + data.loc[dydx**2<22**2,'probability_corry_fails error'].mean()**2)**.5
+		
+		utils.save_dataframe(
+			df = pandas.Series(
+				dict(
+					probability_corry_fails = probability_corry_fails_final_value,
+					probability_corry_fails_error = probability_corry_fails_final_value_error,
+				),
+				name = 'probability',
+			),
+			name = 'probability_that_corry_fails',
+			location = employee.path_to_directory_of_my_task,
+		)
+		
 		fig = px.line(
 			data_frame = data,
-			title = f'Estimation of probability of corry to fail<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
+			title = f'Estimation of probability track reconstruction error<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
 			x = 'DUT_ROI_size (m)',
 			y = 'probability_corry_fails',
 			error_y = 'probability_corry_fails error',
 			markers = True,
+			labels = {
+				'probability_corry_fails': 'Probability that corry fails',
+				'DUT_ROI_size (m)': 'DUT ROI size (m)',
+			},
+		)
+		fig.add_hline(
+			probability_corry_fails_final_value,
+			annotation_text = f'Probability that corry fails = {ufloat(probability_corry_fails_final_value,probability_corry_fails_final_value_error)}',
+		)
+		fig.add_hrect(
+			y0 = probability_corry_fails_final_value - probability_corry_fails_final_value_error,
+			y1 = probability_corry_fails_final_value + probability_corry_fails_final_value_error,
+			fillcolor = "black",
+			opacity = 0.1,
+			line_width = 0,
 		)
 		fig.write_html(
 			employee.path_to_directory_of_my_task/'probability_of_failure_vs_ROI_size.html',
