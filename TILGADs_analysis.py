@@ -487,7 +487,6 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			employee.path_to_directory_of_my_task/'probability_of_failure_vs_ROI_size.html',
 			include_plotlyjs = 'cdn',
 		)
-		
 
 def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float):
 	if set(tracks.index.names) != set(DUT_hits.names):
@@ -765,6 +764,7 @@ def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat):
 	plot_DUT_distributions(TI_LGAD_analysis)
 	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False)
 	transformation_for_centering_and_leveling(TI_LGAD_analysis)
+	estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis)
 	efficiency_vs_distance_calculation(TI_LGAD_analysis)
 
 def execute_all_analyses():
