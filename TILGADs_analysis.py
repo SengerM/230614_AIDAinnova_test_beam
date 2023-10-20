@@ -337,10 +337,6 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
 		)
 		
-		DUT_ROI_SIZE = 566e-6
-		tracks['is_inside_DUT_ROI'] = False # Initialize.
-		tracks.loc[(tracks['Px_transformed']>=-DUT_ROI_SIZE/2) & (tracks['Px_transformed']<DUT_ROI_SIZE/2) & (tracks['Py_transformed']>=-DUT_ROI_SIZE/2) & (tracks['Py_transformed']<DUT_ROI_SIZE/2), 'is_inside_DUT_ROI'] = True
-		
 		# To estimate the total area, I use the tracks data before the transformation (rotation and translation) in which the total area should be a rectangle aligned with x and y, and then apply the transformation wherever needed.
 		total_area_corners = pandas.DataFrame(
 			{
@@ -356,77 +352,105 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi/4,
 		)
 		
-		number_of_defected_tracks_outside_DUT_ROI = len(tracks.query('DUT_hit==True and is_inside_DUT_ROI==False'))
-		total_number_of_DUT_hits = len(tracks.query('DUT_hit==True'))
-		total_area = (total_area_corners.loc['bottom_right','x']-total_area_corners.loc['bottom_left','x'])*(total_area_corners.loc['top_left','y']-total_area_corners.loc['bottom_left','y'])
-		DUT_ROI_area = DUT_ROI_SIZE**2
-		
-		fraction_of_missreconstructed_tracks = number_of_defected_tracks_outside_DUT_ROI/total_number_of_DUT_hits*total_area/(total_area-DUT_ROI_area)
-		
-		results = pandas.Series(
-			{
-				'number_of_defected_tracks_outside_DUT_ROI': number_of_defected_tracks_outside_DUT_ROI,
-				'total_number_of_DUT_hits': total_number_of_DUT_hits,
-				'total_area (m^2)': total_area,
-				'DUT_ROI_area (m^2)': DUT_ROI_area,
-				'fraction_of_missreconstructed_tracks': fraction_of_missreconstructed_tracks,
-			},
-			name = 'results'
-		)
-		utils.save_dataframe(results, 'results', employee.path_to_directory_of_my_task)
-		
-		logging.info('Plotting tracks and hits on DUT...')
-		fig = px.scatter(
-			tracks.sort_values('DUT_hit', ascending=True).reset_index().query('DUT_hit==True'),
-			title = f'Tracks that hit the DUT<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
-			x = 'Px_transformed',
-			y = 'Py_transformed',
-			color = 'is_inside_DUT_ROI',
-			hover_data = ['n_run','n_event'],
+		logging.info(f'Calculating probability that corry fails...')
+		data = []
+		for DUT_ROI_size in numpy.linspace(111e-6,2222e-6,33):
+			tracks_for_which_DUT_has_a_signal = tracks.query('DUT_hit==True')
+			tracks_for_which_DUT_has_a_signal['is_inside_DUT_ROI'] = False # Initialize.
+			tracks_for_which_DUT_has_a_signal.loc[(tracks_for_which_DUT_has_a_signal['Px_transformed']>=-DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Px_transformed']<DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Py_transformed']>=-DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Py_transformed']<DUT_ROI_size/2), 'is_inside_DUT_ROI'] = True
+			n_tracks_outside_DUT = len(tracks_for_which_DUT_has_a_signal.query('is_inside_DUT_ROI==False'))
+			n_tracks = len(tracks_for_which_DUT_has_a_signal)
+			n_tracks_within_DUT = len(tracks_for_which_DUT_has_a_signal.query('is_inside_DUT_ROI==True'))
+			total_area = (total_area_corners.loc['bottom_right','x']-total_area_corners.loc['bottom_left','x'])*(total_area_corners.loc['top_left','y']-total_area_corners.loc['bottom_left','y'])
+			DUT_area = DUT_ROI_size**2
+			
+			probability_corry_fails = ((n_tracks_within_DUT/n_tracks_outside_DUT - DUT_area/(total_area-DUT_area))*(total_area-DUT_area)/total_area+1)**-1
+			
+			data.append(
+				{
+					'DUT_ROI_size (m)': DUT_ROI_size,
+					'probability_corry_fails': probability_corry_fails,
+				}
+			)
+			
+			############################################################
+			############################################################
+			save_these_plots_here = employee.path_to_directory_of_my_task/'tracks'
+			save_these_plots_here.mkdir(exist_ok = True)
+			df = tracks_for_which_DUT_has_a_signal
+			graph_dimensions = dict(
+				color = 'is_inside_DUT_ROI',
+			)
 			labels = {
 				'Px_transformed': 'x (m)',
 				'Py_transformed': 'y (m)',
-			},
-		)
-		fig.update_yaxes(
-			scaleanchor = "x",
-			scaleratio = 1,
-		)
-		for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
-			method(0)
-		fig.add_shape(
-			type = "rect",
-			x0 = -250e-6, 
-			y0 = -250e-6, 
-			x1 = 250e-6, 
-			y1 = 250e-6,
-		)
-		fig.add_shape(
-			type = "rect",
-			x0 = -DUT_ROI_SIZE/2,
-			y0 = -DUT_ROI_SIZE/2,
-			x1 = DUT_ROI_SIZE/2,
-			y1 = DUT_ROI_SIZE/2,
-			line=dict(
-				dash = "dash",
-			),
-		)
-		fig.add_trace(
-			go.Scatter(
-				x = [total_area_corners.loc[corner,'x_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'x_transformed']],
-				y = [total_area_corners.loc[corner,'y_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'y_transformed']],
-				mode = 'lines',
-				line = dict(
-					color = 'black',
-				),
-				showlegend = False,
-				hoverinfo = 'skip',
+			}
+			fig = px.scatter(
+				df.reset_index(drop=False),
+				title = f'Tracks that hit the DUT<br><sup>{TI_LGAD_analysis.pseudopath}, ROI size = {DUT_ROI_size*1e6:.0f} µm</sup>',
+				x = 'Px_transformed',
+				y = 'Py_transformed',
+				hover_data = ['n_run','n_event'],
+				labels = labels,
+				**graph_dimensions
 			)
+			# ~ plotly_utils.add_grouped_legend(fig=fig, data_frame=df, x='Px_transformed', graph_dimensions=graph_dimensions, labels=labels)
+			fig.update_yaxes(
+				scaleanchor = "x",
+				scaleratio = 1,
+			)
+			for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
+				method(0)
+			fig.add_shape(
+				type = "rect",
+				x0 = -250e-6, 
+				y0 = -250e-6, 
+				x1 = 250e-6, 
+				y1 = 250e-6,
+			)
+			fig.add_shape(
+				type = "rect",
+				x0 = -DUT_ROI_size/2,
+				y0 = -DUT_ROI_size/2,
+				x1 = DUT_ROI_size/2,
+				y1 = DUT_ROI_size/2,
+				line=dict(
+					dash = "dash",
+				),
+			)
+			fig.add_trace(
+				go.Scatter(
+					x = [total_area_corners.loc[corner,'x_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'x_transformed']],
+					y = [total_area_corners.loc[corner,'y_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'y_transformed']],
+					mode = 'lines',
+					line = dict(
+						color = 'black',
+					),
+					showlegend = False,
+					hoverinfo = 'skip',
+				)
+			)
+			fig.write_html(
+				save_these_plots_here/f'DUT_hits_when_ROI_{DUT_ROI_size*1e6:.0f}um.html',
+				include_plotlyjs = 'cdn',
+			)
+			############################################################
+			############################################################
+			
+		data = pandas.DataFrame.from_records(data)
+		
+		fig = px.line(
+			data_frame = data,
+			title = f'Estimation of probability of corry to fail<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
+			x = 'DUT_ROI_size (m)',
+			y = 'probability_corry_fails',
+			markers = True,
 		)
 		fig.write_html(
-			employee.path_to_directory_of_my_task/'DUT_hits.html',
+			employee.path_to_directory_of_my_task/'probability_of_failure_vs_ROI_size.html',
 			include_plotlyjs = 'cdn',
 		)
+		
 
 def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float):
 	if set(tracks.index.names) != set(DUT_hits.names):
