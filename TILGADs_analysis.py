@@ -13,6 +13,7 @@ import json
 import warnings
 from parse_waveforms import read_parsed_from_waveforms_from_batch
 import multiprocessing
+from uncertainties import ufloat
 
 def load_analyses_config():
 	logging.info(f'Reading analyses config from the cloud...')
@@ -354,7 +355,7 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 		
 		logging.info(f'Calculating probability that corry fails...')
 		data = []
-		for DUT_ROI_size in numpy.linspace(111e-6,2222e-6,33):
+		for DUT_ROI_size in numpy.linspace(444e-6,2222e-6,33):
 			tracks_for_which_DUT_has_a_signal = tracks.query('DUT_hit==True')
 			tracks_for_which_DUT_has_a_signal['is_inside_DUT_ROI'] = False # Initialize.
 			tracks_for_which_DUT_has_a_signal.loc[(tracks_for_which_DUT_has_a_signal['Px_transformed']>=-DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Px_transformed']<DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Py_transformed']>=-DUT_ROI_size/2) & (tracks_for_which_DUT_has_a_signal['Py_transformed']<DUT_ROI_size/2), 'is_inside_DUT_ROI'] = True
@@ -364,12 +365,13 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			total_area = (total_area_corners.loc['bottom_right','x']-total_area_corners.loc['bottom_left','x'])*(total_area_corners.loc['top_left','y']-total_area_corners.loc['bottom_left','y'])
 			DUT_area = DUT_ROI_size**2
 			
-			probability_corry_fails = ((n_tracks_within_DUT/n_tracks_outside_DUT - DUT_area/(total_area-DUT_area))*(total_area-DUT_area)/total_area+1)**-1
+			probability_corry_fails = ((ufloat(n_tracks_within_DUT,n_tracks_within_DUT**.5)/ufloat(n_tracks_outside_DUT,n_tracks_within_DUT**.5) - DUT_area/(total_area-DUT_area))*(total_area-DUT_area)/total_area+1)**-1
 			
 			data.append(
 				{
 					'DUT_ROI_size (m)': DUT_ROI_size,
-					'probability_corry_fails': probability_corry_fails,
+					'probability_corry_fails': probability_corry_fails.nominal_value,
+					'probability_corry_fails error': probability_corry_fails.std_dev,
 				}
 			)
 			
@@ -444,6 +446,7 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			title = f'Estimation of probability of corry to fail<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
 			x = 'DUT_ROI_size (m)',
 			y = 'probability_corry_fails',
+			error_y = 'probability_corry_fails error',
 			markers = True,
 		)
 		fig.write_html(
