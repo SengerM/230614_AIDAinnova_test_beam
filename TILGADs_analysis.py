@@ -253,8 +253,8 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
 		
 		logging.info('Applying transformation to tracks to center and align DUT...')
-		tracks = translate_and_rotate_tracks(
-			tracks = tracks,
+		tracks[['Px','Py']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
 			x_translation = analysis_config['x_translation'],
 			y_translation = analysis_config['y_translation'],
 			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
