@@ -499,15 +499,7 @@ def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project
 		DUT_hits_count[i] = len(utils.select_by_multiindex(tracks, DUT_hits).query(f'{d-window_size/2}<={project_on} and {project_on}<{d+window_size/2}'))
 	return DUT_hits_count/(total_tracks_count-number_of_noHitTrack_that_are_fake_per_window)
 
-def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float, number_of_noHitTrack_that_are_fake_per_unit_area:float, n_bootstraps:int=99, confidence_level:float=.68):
-	original_efficiency = efficiency_vs_1D_distance_rolling(
-		tracks = tracks,
-		DUT_hits = DUT_hits,
-		project_on = project_on,
-		distances = distances,
-		window_size = window_size,
-		number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area,
-	)
+def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float, number_of_noHitTrack_that_are_fake_per_unit_area:float, number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty:float, n_bootstraps:int=99, confidence_level:float=.68):
 	replicas = []
 	for n_bootstrap in range(n_bootstraps):
 		efficiency = efficiency_vs_1D_distance_rolling(
@@ -516,22 +508,13 @@ def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, 
 			project_on = project_on,
 			distances = distances,
 			window_size = window_size,
-			number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area,
+			number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area + numpy.random.randn()*number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty,
 		)
 		replicas.append(efficiency)
 	replicas = numpy.array(replicas)
 	value = numpy.quantile(replicas, q=.5, axis=0, method='interpolated_inverted_cdf')
 	error_up = numpy.quantile(replicas, q=.5+confidence_level/2, axis=0, method='interpolated_inverted_cdf') - value
 	error_down = value - numpy.quantile(replicas, q=.5-confidence_level/2, axis=0, method='interpolated_inverted_cdf')
-	
-	# ~ try:
-		# ~ error_up[value==0] = sorted(set(error_up))[1]
-	# ~ except Exception:
-		# ~ pass
-	# ~ try:
-		# ~ error_down[value==1] = sorted(set(error_down))[1]
-	# ~ except Exception:
-		# ~ pass
 	
 	return error_down, error_up
 
@@ -611,7 +594,7 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 		# Some hardcoded stuff #########################################
 		################################################################
 		PIXEL_SIZE = 250e-6
-		ROI_DISTANCE_OFFSET = 50e-6
+		ROI_DISTANCE_OFFSET = 88e-6
 		ROI_WIDTH = PIXEL_SIZE/3
 		PIXEL_DEPENDENT_SETTINGS = {
 			'top_row': dict(
@@ -660,8 +643,8 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 				right_pixel_rowcol = [0,1],
 			),
 		}
-		CALCULATION_STEP = 22e-6
-		ROLLING_WINDOW_SIZE = 11e-6
+		CALCULATION_STEP = 11e-6
+		ROLLING_WINDOW_SIZE = 44e-6
 		################################################################
 		################################################################
 		################################################################
@@ -716,7 +699,7 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 					)
 				
 				logging.info('Calculating efficiency vs distance...')
-				
+				tracks_for_efficiency_calculation.sort_values(f'P{project_on}_transformed', inplace=True)
 				distance_axis = numpy.arange(
 					start = tracks_for_efficiency_calculation[f'P{project_on}_transformed'].min(),
 					stop = tracks_for_efficiency_calculation[f'P{project_on}_transformed'].max(),
@@ -744,6 +727,7 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 						)
 						error_minus, error_plus = efficiency_vs_1D_distance_rolling_error_estimation(
 							**efficiency_calculation_args,
+							number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty = number_of_noHitTrack_that_are_fake_per_unit_area.std_dev,
 							n_bootstraps = 33,
 						)
 					df = pandas.DataFrame(
@@ -786,7 +770,7 @@ def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat):
 	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False)
 	transformation_for_centering_and_leveling(TI_LGAD_analysis)
 	estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis)
-	efficiency_vs_distance_calculation(TI_LGAD_analysis)
+	efficiency_vs_distance_calculation(TI_LGAD_analysis, force=False)
 
 def execute_all_analyses():
 	TB_bureaucrat = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB'))
@@ -823,6 +807,10 @@ if __name__ == '__main__':
 	)
 	
 	set_my_template_as_default()
+	
+	execute_all_analyses()
+	
+	a
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
