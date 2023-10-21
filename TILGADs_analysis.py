@@ -380,79 +380,79 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			
 			############################################################
 			############################################################
-			save_these_plots_here = employee.path_to_directory_of_my_task/'tracks'
-			save_these_plots_here.mkdir(exist_ok = True)
-			df = tracks_for_which_DUT_has_a_signal
-			graph_dimensions = dict(
-				color = 'is_inside_DUT_ROI',
-			)
-			labels = {
-				'Px_transformed': 'x (m)',
-				'Py_transformed': 'y (m)',
-			}
-			fig = px.scatter(
-				df.reset_index(drop=False),
-				title = f'Tracks that hit the DUT<br><sup>{TI_LGAD_analysis.pseudopath}, ROI size = {DUT_ROI_size*1e6:.0f} µm</sup>',
-				x = 'Px_transformed',
-				y = 'Py_transformed',
-				hover_data = ['n_run','n_event'],
-				labels = labels,
-				**graph_dimensions
-			)
-			# ~ plotly_utils.add_grouped_legend(fig=fig, data_frame=df, x='Px_transformed', graph_dimensions=graph_dimensions, labels=labels)
-			fig.update_yaxes(
-				scaleanchor = "x",
-				scaleratio = 1,
-			)
-			for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
-				method(0)
-			fig.add_shape(
-				type = "rect",
-				x0 = -250e-6, 
-				y0 = -250e-6, 
-				x1 = 250e-6, 
-				y1 = 250e-6,
-			)
-			fig.add_shape(
-				type = "rect",
-				x0 = -DUT_ROI_size/2,
-				y0 = -DUT_ROI_size/2,
-				x1 = DUT_ROI_size/2,
-				y1 = DUT_ROI_size/2,
-				line=dict(
-					dash = "dash",
-				),
-			)
-			fig.add_trace(
-				go.Scatter(
-					x = [total_area_corners.loc[corner,'x_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'x_transformed']],
-					y = [total_area_corners.loc[corner,'y_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'y_transformed']],
-					mode = 'lines',
-					line = dict(
-						color = 'black',
-					),
-					showlegend = False,
-					hoverinfo = 'skip',
+			if True: # This `if True` is simply so I can fold the code block.
+				save_these_plots_here = employee.path_to_directory_of_my_task/'tracks'
+				save_these_plots_here.mkdir(exist_ok = True)
+				df = tracks_for_which_DUT_has_a_signal
+				graph_dimensions = dict(
+					color = 'is_inside_DUT_ROI',
 				)
-			)
-			fig.write_html(
-				save_these_plots_here/f'DUT_hits_when_ROI_{DUT_ROI_size*1e6:.0f}um.html',
-				include_plotlyjs = 'cdn',
-			)
+				labels = {
+					'Px_transformed': 'x (m)',
+					'Py_transformed': 'y (m)',
+				}
+				fig = px.scatter(
+					df.reset_index(drop=False),
+					title = f'Tracks that hit the DUT<br><sup>{TI_LGAD_analysis.pseudopath}, ROI size = {DUT_ROI_size*1e6:.0f} µm</sup>',
+					x = 'Px_transformed',
+					y = 'Py_transformed',
+					hover_data = ['n_run','n_event'],
+					labels = labels,
+					**graph_dimensions
+				)
+				# ~ plotly_utils.add_grouped_legend(fig=fig, data_frame=df, x='Px_transformed', graph_dimensions=graph_dimensions, labels=labels)
+				fig.update_yaxes(
+					scaleanchor = "x",
+					scaleratio = 1,
+				)
+				for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
+					method(0)
+				fig.add_shape(
+					type = "rect",
+					x0 = -250e-6, 
+					y0 = -250e-6, 
+					x1 = 250e-6, 
+					y1 = 250e-6,
+				)
+				fig.add_shape(
+					type = "rect",
+					x0 = -DUT_ROI_size/2,
+					y0 = -DUT_ROI_size/2,
+					x1 = DUT_ROI_size/2,
+					y1 = DUT_ROI_size/2,
+					line=dict(
+						dash = "dash",
+					),
+				)
+				fig.add_trace(
+					go.Scatter(
+						x = [total_area_corners.loc[corner,'x_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'x_transformed']],
+						y = [total_area_corners.loc[corner,'y_transformed'] for corner in total_area_corners.index.get_level_values('which_corner')] + [total_area_corners.loc[total_area_corners.index.get_level_values('which_corner')[0],'y_transformed']],
+						mode = 'lines',
+						line = dict(
+							color = 'black',
+						),
+						showlegend = False,
+						hoverinfo = 'skip',
+					)
+				)
+				fig.write_html(
+					save_these_plots_here/f'DUT_hits_when_ROI_{DUT_ROI_size*1e6:.0f}um.html',
+					include_plotlyjs = 'cdn',
+				)
 			############################################################
 			############################################################
 			
 		data = pandas.DataFrame.from_records(data)
 		
 		dydx = data['probability_corry_fails'].diff()/data['DUT_ROI_size (m)'].diff()
-		probability_corry_fails_final_value = data.loc[dydx**2<22**2,'probability_corry_fails'].mean()
-		probability_corry_fails_final_value_error = (data.loc[dydx**2<22**2,'probability_corry_fails'].std()**2 + data.loc[dydx**2<22**2,'probability_corry_fails error'].mean()**2)**.5
+		probability_corry_fails_final_value = numpy.mean([ufloat(_['probability_corry_fails'],_['probability_corry_fails error']) for i,_ in data.loc[dydx**2<22**2].iterrows()])
 		
 		utils.save_dataframe(
 			df = pandas.Series(
 				dict(
-					probability_corry_fails = probability_corry_fails_final_value,
-					probability_corry_fails_error = probability_corry_fails_final_value_error,
+					probability_corry_fails = probability_corry_fails_final_value.nominal_value,
+					probability_corry_fails_error = probability_corry_fails_final_value.std_dev,
 				),
 				name = 'probability',
 			),
@@ -473,12 +473,12 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			},
 		)
 		fig.add_hline(
-			probability_corry_fails_final_value,
-			annotation_text = f'Probability that corry fails = {ufloat(probability_corry_fails_final_value,probability_corry_fails_final_value_error)}',
+			probability_corry_fails_final_value.nominal_value,
+			annotation_text = f'Probability that corry fails = {probability_corry_fails_final_value}',
 		)
 		fig.add_hrect(
-			y0 = probability_corry_fails_final_value - probability_corry_fails_final_value_error,
-			y1 = probability_corry_fails_final_value + probability_corry_fails_final_value_error,
+			y0 = probability_corry_fails_final_value.nominal_value - probability_corry_fails_final_value.std_dev,
+			y1 = probability_corry_fails_final_value.nominal_value + probability_corry_fails_final_value.std_dev,
 			fillcolor = "black",
 			opacity = 0.1,
 			line_width = 0,
@@ -538,7 +538,7 @@ def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, 
 	return error_down, error_up
 
 def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
-	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
+	TI_LGAD_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','estimate_fraction_of_misreconstructed_tracks'])
 	
 	TASK_NAME = 'efficiency_vs_distance_calculation'
 	
@@ -583,11 +583,26 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
 		
 		logging.info('Applying transformation to tracks to center and align DUT...')
-		tracks = translate_and_rotate_tracks(
-			tracks = tracks,
+		tracks[['Px_transformed','Py_transformed']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
 			x_translation = analysis_config['x_translation'],
 			y_translation = analysis_config['y_translation'],
 			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		# To estimate the total area, I use the tracks data before the transformation (rotation and translation) in which the total area should be a rectangle aligned with x and y, and then apply the transformation wherever needed.
+		total_area_corners = pandas.DataFrame(
+			{
+				'x': [tracks['Px'].min(), tracks['Px'].max(), tracks['Px'].max(), tracks['Px'].min()],
+				'y': [tracks['Py'].min(), tracks['Py'].min(), tracks['Py'].max(), tracks['Py'].max()],
+				'which_corner': ['bottom_left','bottom_right','top_right','top_left'],
+			},
+		).set_index('which_corner')
+		total_area_corners[['x_transformed','y_transformed']] = translate_and_then_rotate(
+			points = total_area_corners,
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi/4,
 		)
 		
 		################################################################
@@ -661,19 +676,21 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 				ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
 				project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
 				
-				tracks_for_efficiency_calculation = tracks.query(f'{xmin}<Px and Px<{xmax} and {ymin}<Py and Py<{ymax}')
+				tracks_for_efficiency_calculation = tracks.query(f'{xmin}<Px_transformed and Px_transformed<{xmax} and {ymin}<Py_transformed and Py_transformed<{ymax}')
 				tracks_for_efficiency_calculation = tracks_for_efficiency_calculation.reset_index(['n_CAEN','CAEN_n_channel'], drop=True)
+				
+				print(tracks_for_efficiency_calculation.groupby('DUT_name_rowcol').count())
 				
 				fig = px.scatter(
 					tracks_for_efficiency_calculation.reset_index(),
 					title = f'Tracks projected on the DUT after transformation<br><sup>{which_pixels_analysis.pseudopath}</sup>',
-					x = 'Px',
-					y = 'Py',
+					x = 'Px_transformed',
+					y = 'Py_transformed',
 					color = 'DUT_name_rowcol',
 					hover_data = ['n_run','n_event'],
 					labels = {
-						'Px': 'x (m)',
-						'Py': 'y (m)',
+						'Px_transformeds': 'x (m)',
+						'Py_transformed': 'y (m)',
 					},
 				)
 				fig.add_shape(
@@ -714,7 +731,7 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 					with warnings.catch_warnings():
 						warnings.simplefilter("ignore")
 						efficiency_calculation_args = dict(
-							tracks = tracks_for_efficiency_calculation.rename(columns={'Px':'x', 'Py':'y'})[['x','y']],
+							tracks = tracks_for_efficiency_calculation.rename(columns={'Px_transformed':'x', 'Py_transformed':'y'})[['x','y']],
 							DUT_hits = DUT_hits_for_efficiency.reset_index(['n_CAEN','CAEN_n_channel'], drop=True).index,
 							project_on = project_on,
 							distances = distance_axis,
@@ -848,6 +865,13 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
+		'--estimate_fraction_of_misreconstructed_tracks',
+		help = 'Pass this flag to run `estimate_fraction_of_misreconstructed_tracks`.',
+		required = False,
+		dest = 'estimate_fraction_of_misreconstructed_tracks',
+		action = 'store_true'
+	)
+	parser.add_argument(
 		'--enable_3D_tracks_plot',
 		help = 'Pass this flag to enable the 3D plot with the tracks, which can take longer to execute.',
 		required = False,
@@ -865,15 +889,6 @@ if __name__ == '__main__':
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	estimate_fraction_of_misreconstructed_tracks(bureaucrat)
-	
-	AAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAA
-	
 	if bureaucrat.was_task_run_successfully('this_is_a_TI-LGAD_analysis'):
 		if args.plot_DUT_distributions == True:
 			plot_DUT_distributions(bureaucrat)
@@ -883,6 +898,8 @@ if __name__ == '__main__':
 			transformation_for_centering_and_leveling(bureaucrat, draw_square=True)
 		if args.efficiency_vs_distance_calculation == True:
 			efficiency_vs_distance_calculation(bureaucrat, force=args.force)
+		if args.estimate_fraction_of_misreconstructed_tracks == True:
+			estimate_fraction_of_misreconstructed_tracks(bureaucrat)
 	elif args.setup_analysis_for_DUT != 'None':
 		setup_TI_LGAD_analysis_within_batch(
 			bureaucrat, 
