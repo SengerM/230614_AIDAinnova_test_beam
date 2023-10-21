@@ -146,20 +146,9 @@ def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, do_3D_plot:bool=True):
 			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
 		)
 		
-		aux_DUT_hits = read_parsed_from_waveforms_from_batch(
-			batch = batch,
-			DUT_name = 'TI122',
-			variables = [], # No need for variables, only need to know which ones are hits.
-			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
-		)
-		
 		setup_config = utils.load_setup_configuration_info(batch)
 		
 		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
-		aux_DUT_hits = aux_DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
-		
-		aux_DUT_hits = aux_DUT_hits.query('DUT_name_rowcol in ["TI122 (0,0)","TI122 (1,0)"]')
-		DUT_hits = utils.select_by_multiindex(DUT_hits, aux_DUT_hits.reset_index(['n_CAEN','CAEN_n_channel']).index)
 		
 		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
 		
