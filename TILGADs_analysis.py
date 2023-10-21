@@ -488,7 +488,7 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			include_plotlyjs = 'cdn',
 		)
 
-def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float):
+def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float, number_of_noHitTrack_that_are_fake_per_unit_area:float):
 	if set(tracks.index.names) != set(DUT_hits.names):
 		raise ValueError('The index levels of `tracks` and `DUT_hits` must be the same, they are not.')
 	if set(tracks.columns) != {'x','y'}:
@@ -496,20 +496,28 @@ def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project
 	if project_on not in {'x','y'}:
 		raise ValueError('`project_on` must be "x" or "y"')
 	
+	if project_on == 'x':
+		window_thickness = tracks['y'].max() - tracks['y'].min()
+	else:
+		window_thickness = tracks['x'].max() - tracks['x'].min()
+	window_area = window_size*window_thickness
+	number_of_noHitTrack_that_are_fake_per_window = window_area*number_of_noHitTrack_that_are_fake_per_unit_area
+	
 	total_tracks_count = distances*0
 	DUT_hits_count = distances*0
 	for i,d in enumerate(distances):
 		total_tracks_count[i] = len(tracks.query(f'{d-window_size/2}<={project_on} and {project_on}<{d+window_size/2}'))
 		DUT_hits_count[i] = len(utils.select_by_multiindex(tracks, DUT_hits).query(f'{d-window_size/2}<={project_on} and {project_on}<{d+window_size/2}'))
-	return DUT_hits_count/total_tracks_count
+	return DUT_hits_count/(total_tracks_count-number_of_noHitTrack_that_are_fake_per_window)
 
-def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float, n_bootstraps:int=99, confidence_level:float=.68):
+def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float, number_of_noHitTrack_that_are_fake_per_unit_area:float, n_bootstraps:int=99, confidence_level:float=.68):
 	original_efficiency = efficiency_vs_1D_distance_rolling(
 		tracks = tracks,
 		DUT_hits = DUT_hits,
 		project_on = project_on,
 		distances = distances,
 		window_size = window_size,
+		number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area,
 	)
 	replicas = []
 	for n_bootstrap in range(n_bootstraps):
@@ -519,6 +527,7 @@ def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, 
 			project_on = project_on,
 			distances = distances,
 			window_size = window_size,
+			number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area,
 		)
 		replicas.append(efficiency)
 	replicas = numpy.array(replicas)
@@ -548,11 +557,24 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 	with TI_LGAD_analysis.handle_task(TASK_NAME) as employee:
 		batch = TI_LGAD_analysis.parent
 		
+		# Read data ---
 		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
+		setup_config = utils.load_setup_configuration_info(batch)
 		
 		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
 		tracks.reset_index('n_track', inplace=True) # We are loading with multiplicity one, so this is not needed anymore.
 		
+		DUT_hits = read_parsed_from_waveforms_from_batch(
+			batch = batch,
+			DUT_name = TI_LGAD_analysis.run_name,
+			variables = [], # No need for variables, only need to know which ones are hits.
+			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		
+		probability_corry_fails = pandas.read_pickle(TI_LGAD_analysis.path_to_directory_of_task('estimate_fraction_of_misreconstructed_tracks')/'probability_that_corry_fails.pickle')
+		probability_corry_fails = ufloat(probability_corry_fails['probability_corry_fails'],probability_corry_fails['probability_corry_fails_error'])
+		
+		# Now do some pre processing ---
 		logging.info('Projecting tracks onto DUT...')
 		projected = utils.project_track_in_z(
 			A = tracks[[f'A{_}' for _ in ['x','y','z']]].to_numpy().T,
@@ -565,22 +587,13 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 			index = tracks.index,
 		)
 		tracks = tracks.join(projected)
+		tracks = tracks[['Px','Py','Pz']] # Keep only relevant columns from now on.
 		
-		DUT_hits = read_parsed_from_waveforms_from_batch(
-			batch = batch,
-			DUT_name = TI_LGAD_analysis.run_name,
-			variables = [], # No need for variables, only need to know which ones are hits.
-			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
-		)
-		
-		setup_config = utils.load_setup_configuration_info(batch)
-		
-		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['DUT_name_rowcol','row','col']])
-		
-		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
-		
-		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
-		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
+		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['DUT_name_rowcol']])
+		DUT_hits.reset_index(['n_CAEN','CAEN_n_channel'], inplace=True, drop=True) # Not used anymore.
+		DUT_hits['hit'] = True
+		DUT_hits = DUT_hits.set_index('DUT_name_rowcol', append=True).unstack('DUT_name_rowcol', fill_value=False)
+		DUT_hits = DUT_hits.droplevel(0, axis=1) # Not used anymore.
 		
 		logging.info('Applying transformation to tracks to center and align DUT...')
 		tracks[['Px_transformed','Py_transformed']] = translate_and_then_rotate(
@@ -598,12 +611,12 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 				'which_corner': ['bottom_left','bottom_right','top_right','top_left'],
 			},
 		).set_index('which_corner')
-		total_area_corners[['x_transformed','y_transformed']] = translate_and_then_rotate(
-			points = total_area_corners,
-			x_translation = analysis_config['x_translation'],
-			y_translation = analysis_config['y_translation'],
-			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi/4,
-		)
+		total_area = (total_area_corners.loc['bottom_right','x']-total_area_corners.loc['bottom_left','x'])*(total_area_corners.loc['top_left','y']-total_area_corners.loc['bottom_left','y'])
+		
+		tracks = tracks.join(pandas.DataFrame({'DUT_hit': [True for _ in range(len(DUT_hits))]}, index=DUT_hits.index))
+		tracks['DUT_hit'] = tracks['DUT_hit'].fillna(False)
+		
+		number_of_noHitTrack_that_are_fake_per_unit_area = (len(tracks.query('DUT_hit == False'))*probability_corry_fails/total_area)
 		
 		################################################################
 		# Some hardcoded stuff #########################################
@@ -677,54 +690,56 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 				project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
 				
 				tracks_for_efficiency_calculation = tracks.query(f'{xmin}<Px_transformed and Px_transformed<{xmax} and {ymin}<Py_transformed and Py_transformed<{ymax}')
-				tracks_for_efficiency_calculation = tracks_for_efficiency_calculation.reset_index(['n_CAEN','CAEN_n_channel'], drop=True)
 				
-				print(tracks_for_efficiency_calculation.groupby('DUT_name_rowcol').count())
+				tracks_for_efficiency_calculation = tracks_for_efficiency_calculation.join(DUT_hits).fillna(False)
+				tracks_for_efficiency_calculation['have_hit'] = tracks_for_efficiency_calculation[DUT_hits.columns].apply(lambda row: ' '.join(row[row==True].keys()), axis=1)
+				tracks_for_efficiency_calculation.loc[tracks_for_efficiency_calculation['have_hit']=='','have_hit'] = 'no hit'
 				
-				fig = px.scatter(
-					tracks_for_efficiency_calculation.reset_index(),
-					title = f'Tracks projected on the DUT after transformation<br><sup>{which_pixels_analysis.pseudopath}</sup>',
-					x = 'Px_transformed',
-					y = 'Py_transformed',
-					color = 'DUT_name_rowcol',
-					hover_data = ['n_run','n_event'],
-					labels = {
-						'Px_transformeds': 'x (m)',
-						'Py_transformed': 'y (m)',
-					},
-				)
-				fig.add_shape(
-					type = "rect",
-					x0 = xmin, 
-					y0 = ymin, 
-					x1 = xmax, 
-					y1 = ymax,
-					line=dict(color="black"),
-				)
-				fig.update_yaxes(
-					scaleanchor = "x",
-					scaleratio = 1,
-				)
-				fig.write_html(
-					which_pixels_employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
-					include_plotlyjs = 'cdn',
-				)
+				if True:
+					logging.info('Plotting tracks used for efficiency calculation...')
+					fig = px.scatter(
+						tracks_for_efficiency_calculation.reset_index().sort_values('have_hit'),
+						title = f'Tracks projected on the DUT after transformation<br><sup>{which_pixels_analysis.pseudopath}</sup>',
+						x = 'Px_transformed',
+						y = 'Py_transformed',
+						color = 'have_hit',
+						hover_data = ['n_run','n_event'],
+						labels = {
+							'Px_transformeds': 'x (m)',
+							'Py_transformed': 'y (m)',
+						},
+					)
+					fig.add_shape(
+						type = "rect",
+						x0 = xmin, 
+						y0 = ymin, 
+						x1 = xmax, 
+						y1 = ymax,
+						line=dict(color="black"),
+					)
+					fig.update_yaxes(
+						scaleanchor = "x",
+						scaleratio = 1,
+					)
+					fig.write_html(
+						which_pixels_employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
+						include_plotlyjs = 'cdn',
+					)
 				
 				logging.info('Calculating efficiency vs distance...')
 				
 				distance_axis = numpy.arange(
-					start = tracks_for_efficiency_calculation[f'P{project_on}'].min(),
-					stop = tracks_for_efficiency_calculation[f'P{project_on}'].max(),
+					start = tracks_for_efficiency_calculation[f'P{project_on}_transformed'].min(),
+					stop = tracks_for_efficiency_calculation[f'P{project_on}_transformed'].max(),
 					step = CALCULATION_STEP,
 				)
 				efficiency_data = []
+				pixel_names = {leftright: f'{TI_LGAD_analysis.run_name} ({PIXEL_DEPENDENT_SETTINGS[which_pixels][f"{leftright}_pixel_rowcol"][0]},{PIXEL_DEPENDENT_SETTINGS[which_pixels][f"{leftright}_pixel_rowcol"][1]})' for leftright in ['left','right']}
 				for leftright in ['left','right','both']:
 					if leftright in {'left','right'}:
-						pixel_rowcol = PIXEL_DEPENDENT_SETTINGS[which_pixels][f'{leftright}_pixel_rowcol']
-						DUT_hits_for_efficiency = DUT_hits.query(f'row=={pixel_rowcol[0]} and col=={pixel_rowcol[1]}')
+						DUT_hits_for_efficiency = DUT_hits.query(f'`{pixel_names[leftright]}` == True')
 					elif leftright == 'both':
-						pixel_rowcol = [PIXEL_DEPENDENT_SETTINGS[which_pixels][f'{_}_pixel_rowcol'] for _ in {'left','right'}]
-						DUT_hits_for_efficiency = DUT_hits.query(f'(row=={pixel_rowcol[0][0]} and col=={pixel_rowcol[0][1]}) or (row=={pixel_rowcol[1][0]} and col=={pixel_rowcol[1][1]})')
+						DUT_hits_for_efficiency = DUT_hits.query(f'`{pixel_names["left"]}` == True or `{pixel_names["right"]}` == True')
 					else:
 						raise RuntimeError('Check this, should never happen!')
 					
@@ -732,24 +747,24 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 						warnings.simplefilter("ignore")
 						efficiency_calculation_args = dict(
 							tracks = tracks_for_efficiency_calculation.rename(columns={'Px_transformed':'x', 'Py_transformed':'y'})[['x','y']],
-							DUT_hits = DUT_hits_for_efficiency.reset_index(['n_CAEN','CAEN_n_channel'], drop=True).index,
+							DUT_hits = DUT_hits_for_efficiency.index,
 							project_on = project_on,
 							distances = distance_axis,
 							window_size = ROLLING_WINDOW_SIZE,
+							number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area.nominal_value,
 						)
-						
 						error_minus, error_plus = efficiency_vs_1D_distance_rolling_error_estimation(
 							**efficiency_calculation_args,
 							n_bootstraps = 33,
 						)
-						df = pandas.DataFrame(
-							{
-								'Distance (m)': distance_axis,
-								'Efficiency': efficiency_vs_1D_distance_rolling(**efficiency_calculation_args),
-								'Efficiency error_-': error_minus,
-								'Efficiency error_+': error_plus,
-							}
-						)
+					df = pandas.DataFrame(
+						{
+							'Distance (m)': distance_axis,
+							'Efficiency': efficiency_vs_1D_distance_rolling(**efficiency_calculation_args),
+							'Efficiency error_-': error_minus,
+							'Efficiency error_+': error_plus,
+						}
+					)
 					df['Pixel'] = leftright
 					efficiency_data.append(df)
 				efficiency_data = pandas.concat(efficiency_data)
