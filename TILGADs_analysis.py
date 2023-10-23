@@ -819,6 +819,7 @@ def interpixel_distance(TI_LGAD_analysis:RunBureaucrat):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','efficiency_vs_distance_calculation'])
 	
 	with TI_LGAD_analysis.handle_task('interpixel_distance') as employee:
+		logging.info(f'Calculating IPD of {TI_LGAD_analysis.pseudopath}...')
 		efficiency_data = []
 		for efficiency_analysis in TI_LGAD_analysis.list_subruns_of_task('efficiency_vs_distance_calculation'):
 			efficiency_analysis.check_these_tasks_were_run_successfully('efficiency_vs_distance') # This should always be the case, but just to be sure...
@@ -884,14 +885,14 @@ def interpixel_distance(TI_LGAD_analysis:RunBureaucrat):
 			employee.path_to_directory_of_my_task/'IPD.html',
 			include_plotlyjs = 'cdn',
 		)
-		a
 
 def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat):
 	plot_DUT_distributions(TI_LGAD_analysis)
 	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False)
 	transformation_for_centering_and_leveling(TI_LGAD_analysis)
 	estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis)
-	efficiency_vs_distance_calculation(TI_LGAD_analysis, force=False)
+	efficiency_vs_distance_calculation(TI_LGAD_analysis)
+	interpixel_distance(TI_LGAD_analysis)
 
 def execute_all_analyses():
 	TB_bureaucrat = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB'))
@@ -906,7 +907,7 @@ def execute_all_analyses():
 			setup_TI_LGAD_analysis_within_batch(TI_LGAD_analysis.parent, TI_LGAD_analysis.run_name)
 	
 	for campaign in TB_bureaucrat.list_subruns_of_task('campaigns'):
-		if 'june' in  campaign.run_name.lower():
+		if 'august' in  campaign.run_name.lower():
 			continue
 		for batch in campaign.list_subruns_of_task('batches'):
 			with multiprocessing.Pool(5) as p:
@@ -928,6 +929,10 @@ if __name__ == '__main__':
 	)
 	
 	set_my_template_as_default()
+	
+	execute_all_analyses()
+	
+	a
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
