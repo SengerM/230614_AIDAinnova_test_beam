@@ -14,6 +14,7 @@ import warnings
 from parse_waveforms import read_parsed_from_waveforms_from_batch
 import multiprocessing
 from uncertainties import ufloat
+from scipy.interpolate import interp1d
 
 def load_analyses_config():
 	logging.info(f'Reading analyses config from the cloud...')
@@ -765,6 +766,126 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, force:boo
 					include_plotlyjs = 'cdn',
 				)
 
+def calculate_interpixel_distance(efficiency_data:pandas.DataFrame, IPD_window:float=66e-6, measure_at_efficiency:float=.5):
+	"""Calculate the inter-pixel distance given the efficiency data.
+	
+	Arguments
+	---------
+	efficiency_data: pandas.DataFrame
+		A data frame of the form
+		```
+		                    Efficiency  Efficiency error_-  Efficiency error_+
+		Pixel Distance (m)                                                    
+		left  -0.000337       0.000000            0.000000            0.000000
+			  -0.000326       0.000000            0.000000            0.000000
+			  -0.000315       0.005809            0.005824            0.005907
+			  -0.000304       0.018390            0.006069            0.010397
+			  -0.000293       0.025456            0.009532            0.017805
+								   ...                 ...                 ...
+		both   0.000289       0.087905            0.022698            0.026788
+			   0.000300       0.044990            0.017955            0.025709
+			   0.000311       0.036991            0.019803            0.023058
+			   0.000322       0.013673            0.012875            0.014932
+			   0.000333       0.021675            0.021303            0.024336
+
+		```
+	"""
+	data = efficiency_data.query(f'{-IPD_window/2} < `Distance (m)` < {IPD_window/2}')
+	
+	data = data.sort_index()
+	interpolated = {}
+	for pixel in {'left','right'}:
+		interpolated[pixel] = {}
+		interpolated[pixel]['val'] = interp1d(
+			y = data.query(f'Pixel == "{pixel}"').index.get_level_values('Distance (m)'),
+			x = data.query(f'Pixel == "{pixel}"')['Efficiency'],
+		)
+		for error_sign in {'+','-'}:
+			interpolated[pixel][error_sign] = interp1d(
+				y = data.query(f'Pixel == "{pixel}"').index.get_level_values('Distance (m)'),
+				x = data.query(f'Pixel == "{pixel}"')['Efficiency'] + int(f'{error_sign}1')*data.query(f'Pixel == "{pixel}"')[f'Efficiency error_{error_sign}'],
+			)
+	
+	IPD = interpolated['right']['val'](measure_at_efficiency) - interpolated['left']['val'](measure_at_efficiency)
+	IPD_largest = interpolated['right']['-'](measure_at_efficiency) - interpolated['left']['-'](measure_at_efficiency)
+	IPD_smallest = interpolated['right']['+'](measure_at_efficiency) - interpolated['left']['+'](measure_at_efficiency)
+	
+	IPD_error_up = IPD_largest - IPD
+	IPD_error_down = IPD - IPD_smallest
+	
+	return IPD, IPD_error_up, IPD_error_down
+
+def interpixel_distance(TI_LGAD_analysis:RunBureaucrat):
+	TI_LGAD_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','efficiency_vs_distance_calculation'])
+	
+	with TI_LGAD_analysis.handle_task('interpixel_distance') as employee:
+		efficiency_data = []
+		for efficiency_analysis in TI_LGAD_analysis.list_subruns_of_task('efficiency_vs_distance_calculation'):
+			efficiency_analysis.check_these_tasks_were_run_successfully('efficiency_vs_distance') # This should always be the case, but just to be sure...
+			_ = pandas.read_pickle(efficiency_analysis.path_to_directory_of_task('efficiency_vs_distance')/'efficiency_vs_distance.pickle')
+			_ = pandas.concat({efficiency_analysis.run_name: _}, names=['pixel_group'])
+			efficiency_data.append(_)
+		efficiency_data = pandas.concat(efficiency_data)
+		
+		IPD = []
+		for pixel_group, data in efficiency_data.groupby('pixel_group'):
+			_IPD, IPD_error_up, IPD_error_down = calculate_interpixel_distance(
+				efficiency_data = data, 
+				measure_at_efficiency = .5,
+			)
+			IPD.append(
+				{
+					'pixel_group': pixel_group,
+					'IPD (m)': _IPD,
+					'IPD (m) error -': IPD_error_down,
+					'IPD (m) error +': IPD_error_up,
+				}
+			)
+		IPD = pandas.DataFrame.from_records(IPD).set_index('pixel_group')
+		
+		IPD_final_value = numpy.mean([ufloat(row['IPD (m)'], max(row['IPD (m) error -'],row['IPD (m) error +'])) for idx,row in IPD.iterrows()])
+		
+		utils.save_dataframe(
+			IPD,
+			'IPD_values',
+			employee.path_to_directory_of_my_task,
+		)
+		utils.save_dataframe(
+			pandas.Series(
+				{
+					'IPD (m)': IPD_final_value.nominal_value,
+					'IPD (m) error': IPD_final_value.std_dev,
+				}
+			),
+			'IPD_final_value',
+			employee.path_to_directory_of_my_task,
+		)
+		
+		fig = px.scatter(
+			title = f'Inter-pixel distance<br><sup>{employee.pseudopath}</sup>',
+			data_frame = IPD.reset_index(drop=False).sort_values('pixel_group'),
+			x = 'pixel_group',
+			y = 'IPD (m)',
+			error_y = 'IPD (m) error +',
+			error_y_minus = 'IPD (m) error -',
+		)
+		fig.add_hline(
+			y = IPD_final_value.nominal_value,
+			annotation_text = f'IPD = {IPD_final_value*1e6} µm'.replace('+/-','±'),
+		)
+		fig.add_hrect(
+			y0 = IPD_final_value.nominal_value - IPD_final_value.std_dev,
+			y1 = IPD_final_value.nominal_value + IPD_final_value.std_dev,
+			fillcolor = "black",
+			opacity = 0.1,
+			line_width = 0,
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'IPD.html',
+			include_plotlyjs = 'cdn',
+		)
+		a
+
 def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat):
 	plot_DUT_distributions(TI_LGAD_analysis)
 	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False)
@@ -785,7 +906,7 @@ def execute_all_analyses():
 			setup_TI_LGAD_analysis_within_batch(TI_LGAD_analysis.parent, TI_LGAD_analysis.run_name)
 	
 	for campaign in TB_bureaucrat.list_subruns_of_task('campaigns'):
-		if 'august' in  campaign.run_name.lower():
+		if 'june' in  campaign.run_name.lower():
 			continue
 		for batch in campaign.list_subruns_of_task('batches'):
 			with multiprocessing.Pool(5) as p:
@@ -807,10 +928,6 @@ if __name__ == '__main__':
 	)
 	
 	set_my_template_as_default()
-	
-	execute_all_analyses()
-	
-	a
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
@@ -864,6 +981,13 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
+		'--IPD',
+		help = 'Pass this flag to run `interpixel_distance` analysis.',
+		required = False,
+		dest = 'interpixel_distance',
+		action = 'store_true'
+	)
+	parser.add_argument(
 		'--enable_3D_tracks_plot',
 		help = 'Pass this flag to enable the 3D plot with the tracks, which can take longer to execute.',
 		required = False,
@@ -892,6 +1016,8 @@ if __name__ == '__main__':
 			efficiency_vs_distance_calculation(bureaucrat, force=args.force)
 		if args.estimate_fraction_of_misreconstructed_tracks == True:
 			estimate_fraction_of_misreconstructed_tracks(bureaucrat)
+		if args.interpixel_distance == True:
+			interpixel_distance(bureaucrat)
 	elif args.setup_analysis_for_DUT != 'None':
 		setup_TI_LGAD_analysis_within_batch(
 			bureaucrat, 
