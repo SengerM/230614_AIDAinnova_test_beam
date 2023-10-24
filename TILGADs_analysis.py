@@ -373,7 +373,7 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat)
 			if True: # This `if True` is simply so I can fold the code block.
 				save_these_plots_here = employee.path_to_directory_of_my_task/'tracks'
 				save_these_plots_here.mkdir(exist_ok = True)
-				df = tracks_for_which_DUT_has_a_signal
+				df = tracks_for_which_DUT_has_a_signal.sort_values('is_inside_DUT_ROI')
 				graph_dimensions = dict(
 					color = 'is_inside_DUT_ROI',
 				)
@@ -929,10 +929,6 @@ if __name__ == '__main__':
 	)
 	
 	set_my_template_as_default()
-	
-	execute_all_analyses()
-	
-	a
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
