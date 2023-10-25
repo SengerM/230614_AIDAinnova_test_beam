@@ -282,6 +282,8 @@ def load_tracks_from_batch(batch:RunBureaucrat, only_multiplicity_one:bool=False
 if __name__ == '__main__':
 	import sys
 	import argparse
+	import my_telegram_bots # Secret tokens from my bots
+	from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
 	
 	logging.basicConfig(
 		stream = sys.stderr, 
@@ -325,8 +327,9 @@ if __name__ == '__main__':
 	
 	utils.guess_where_how_to_run(
 		bureaucrat = bureaucrat,
-		raw_level_f = corry_do_all_steps_in_some_run,
-		corry_container_id = args.container_id,
-		force = args.force,
-		silent_corry = not args.show_corry_output,
+		raw_level_f = lambda bureaucrat: corry_do_all_steps_in_some_run(run=bureaucrat, corry_container_id = args.container_id, force = args.force,	silent_corry = not args.show_corry_output),
+		telegram_bot_reporter = SafeTelegramReporter4Loops(
+			bot_token = my_telegram_bots.robobot.token,
+			chat_id = my_telegram_bots.chat_ids['Robobot TCT setup'],
+		),
 	)
