@@ -297,13 +297,10 @@ def get_run_directory_within_corry_docker(bureaucrat:RunBureaucrat):
 		raise RuntimeError(f'Run pointed to by `bureaucrat` does not exist: {bureaucrat.path_to_run_directory}')
 	TB_data_analysis_bureaucrat = bureaucrat
 	while True:
-		try:
+		if TB_data_analysis_bureaucrat.parent is None:
+			break
+		else:
 			TB_data_analysis_bureaucrat = TB_data_analysis_bureaucrat.parent
-		except RuntimeError as e:
-			if 'No parent bureaucrat found for' in repr(e):
-				break
-			else:
-				raise e
 	
 	return Path('/data')/bureaucrat.path_to_run_directory.relative_to(TB_data_analysis_bureaucrat.path_to_run_directory.parent)
 
