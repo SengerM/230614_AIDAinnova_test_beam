@@ -61,11 +61,14 @@ def setup_TI_LGAD_analysis_within_batch(batch:RunBureaucrat, DUT_name:str)->RunB
 		
 	return TILGAD_bureaucrat
 
-def plot_DUT_distributions(TI_LGAD_analysis_bureaucrat:RunBureaucrat):
+def plot_DUT_distributions(TI_LGAD_analysis_bureaucrat:RunBureaucrat, force:bool=False):
 	"""Plot some raw distributions, useful to configure cuts and thresholds
 	for further steps in the analysis."""
 	MAXIMUM_NUMBER_OF_EVENTS = 9999
 	TI_LGAD_analysis_bureaucrat.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis') # To be sure we are inside what is supposed to be a TI-LGAD analysis.
+	
+	if force==False and TI_LGAD_analysis_bureaucrat.was_task_run_successfully('plot_distributions'):
+		return
 	
 	with TI_LGAD_analysis_bureaucrat.handle_task('plot_distributions') as employee:
 		setup_config = utils.load_setup_configuration_info(TI_LGAD_analysis_bureaucrat.parent)
@@ -117,8 +120,11 @@ def plot_DUT_distributions(TI_LGAD_analysis_bureaucrat:RunBureaucrat):
 				include_plotlyjs = 'cdn',
 			)
 
-def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, do_3D_plot:bool=True):
+def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, do_3D_plot:bool=True, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
+	
+	if force==False and TI_LGAD_analysis.was_task_run_successfully('plot_tracks_and_hits'):
+		return
 	
 	with TI_LGAD_analysis.handle_task('plot_tracks_and_hits') as employee:
 		batch = TI_LGAD_analysis.parent
@@ -224,8 +230,11 @@ def translate_and_then_rotate(points:pandas.DataFrame, x_translation:float, y_tr
 	points['x'], points['y'] = r*numpy.cos(phi+angle_rotation), r*numpy.sin(phi+angle_rotation)
 	return points
 
-def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, draw_square:bool=True):
+def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, draw_square:bool=True, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
+	
+	if force==False and TI_LGAD_analysis.was_task_run_successfully('transformation_for_centering_and_leveling'):
+		return
 	
 	with TI_LGAD_analysis.handle_task('transformation_for_centering_and_leveling') as employee:
 		batch = TI_LGAD_analysis.parent
@@ -293,8 +302,11 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 			include_plotlyjs = 'cdn',
 		)
 
-def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat):
+def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
+	
+	if force==False and TI_LGAD_analysis.was_task_run_successfully('estimate_fraction_of_misreconstructed_tracks'):
+		return
 	
 	with TI_LGAD_analysis.handle_task('estimate_fraction_of_misreconstructed_tracks') as employee:
 		batch = TI_LGAD_analysis.parent
@@ -815,8 +827,11 @@ def calculate_interpixel_distance(efficiency_data:pandas.DataFrame, IPD_window:f
 	
 	return IPD, IPD_error_up, IPD_error_down
 
-def interpixel_distance(TI_LGAD_analysis:RunBureaucrat):
+def interpixel_distance(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','efficiency_vs_distance_calculation'])
+	
+	if force==False and TI_LGAD_analysis.was_task_run_successfully('interpixel_distance'):
+		return
 	
 	with TI_LGAD_analysis.handle_task('interpixel_distance') as employee:
 		logging.info(f'Calculating IPD of {TI_LGAD_analysis.pseudopath}...')
@@ -886,13 +901,13 @@ def interpixel_distance(TI_LGAD_analysis:RunBureaucrat):
 			include_plotlyjs = 'cdn',
 		)
 
-def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat):
-	plot_DUT_distributions(TI_LGAD_analysis)
-	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False)
-	transformation_for_centering_and_leveling(TI_LGAD_analysis)
-	estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis)
-	efficiency_vs_distance_calculation(TI_LGAD_analysis)
-	interpixel_distance(TI_LGAD_analysis)
+def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
+	plot_DUT_distributions(TI_LGAD_analysis, force=force)
+	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False, force=force)
+	transformation_for_centering_and_leveling(TI_LGAD_analysis, force=force)
+	estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis, force=force)
+	efficiency_vs_distance_calculation(TI_LGAD_analysis, force=force)
+	interpixel_distance(TI_LGAD_analysis, force=force)
 
 def execute_all_analyses():
 	TB_bureaucrat = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB'))
@@ -1002,23 +1017,32 @@ if __name__ == '__main__':
 		dest = 'force',
 		action = 'store_true'
 	)
+	parser.add_argument(
+		'--run_all_analyses',
+		help = 'If this flag is passed, it will execute `run_all_analyses_in_a_TILGAD`.',
+		required = False,
+		dest = 'run_all_analyses_in_a_TILGAD',
+		action = 'store_true'
+	)
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
 	if bureaucrat.was_task_run_successfully('this_is_a_TI-LGAD_analysis'):
 		if args.plot_DUT_distributions == True:
-			plot_DUT_distributions(bureaucrat)
+			plot_DUT_distributions(bureaucrat, force=args.force)
 		if args.plot_tracks_and_hits == True:
-			plot_tracks_and_hits(bureaucrat, do_3D_plot=args.enable_3D_tracks_plot)
+			plot_tracks_and_hits(bureaucrat, do_3D_plot=args.enable_3D_tracks_plot, force=args.force)
 		if args.transformation_for_centering_and_leveling == True:
-			transformation_for_centering_and_leveling(bureaucrat, draw_square=True)
+			transformation_for_centering_and_leveling(bureaucrat, draw_square=True, force=args.force)
 		if args.efficiency_vs_distance_calculation == True:
 			efficiency_vs_distance_calculation(bureaucrat, force=args.force)
 		if args.estimate_fraction_of_misreconstructed_tracks == True:
-			estimate_fraction_of_misreconstructed_tracks(bureaucrat)
+			estimate_fraction_of_misreconstructed_tracks(bureaucrat, force=args.force)
 		if args.interpixel_distance == True:
-			interpixel_distance(bureaucrat)
+			interpixel_distance(bureaucrat, force=args.force)
+		if args.run_all_analyses_in_a_TILGAD:
+			run_all_analyses_in_a_TILGAD(bureaucrat, force=args.force)
 	elif args.setup_analysis_for_DUT != 'None':
 		setup_TI_LGAD_analysis_within_batch(
 			bureaucrat, 
