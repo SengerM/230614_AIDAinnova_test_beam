@@ -289,7 +289,18 @@ def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False):
 			employee.path_to_directory_of_my_task/'cluster_size.html',
 			include_plotlyjs = 'cdn',
 		)
-		a
+		
+		fig = px.histogram(
+			tracks,
+			x =  'cluster_size',
+			title = f'Cluster size<br><sup>{RSD_analysis.pseudopath}</sup>',
+			text_auto = True,
+		)
+		fig.update_yaxes(type="log")
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'cluster_size_histogram.html',
+			include_plotlyjs = 'cdn',
+		)
 
 if __name__ == '__main__':
 	import sys
