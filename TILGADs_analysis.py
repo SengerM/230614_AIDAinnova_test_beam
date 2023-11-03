@@ -333,6 +333,9 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 		batch = TI_LGAD_analysis.parent
 		
 		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
+		__ = {'x_translation','y_translation','rotation_around_z_deg'}
+		if any([numpy.isnan(analysis_config[_]) for _ in __]):
+			raise RuntimeError(f'One (or more) of {__} is `NaN`, check the spreadsheet.')
 		
 		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
 		
