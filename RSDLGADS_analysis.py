@@ -347,7 +347,7 @@ def transformation_for_centering_and_leveling(RSD_analysis:RunBureaucrat, draw_s
 			include_plotlyjs = 'cdn',
 		)
 
-def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None):
+def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None, DUT_ROI_margin:float=None, draw_square:bool=True):
 	"""
 	Arguments
 	---------
@@ -355,6 +355,14 @@ def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_
 		A list with the names of other DUTs that are present in the same batch
 		(i.e. in `RSD_analysis.parent`) that are added to the triggering
 		by requesting a coincidence between the tracks and them, e.g. `"AC 11 (0,1)"`.
+	DUT_ROI_margin: float, default None
+		If `None`, this argumet is ignored. If a float number, this defines
+		a margin to consider for the ROI of the DUT which is defined
+		by its pitch. For example, if the pitch is 500 µm and `DUT_ROI_margin=0`,
+		then only the tracks inside a square of 500 µm side are used. If,
+		instead, `DUT_ROI_margin=50e-6` then the square is reduced by 50 µm
+		in each side, i.e. margins of 50 µm are added to it. Negative values
+		are allowed, which increase the ROI.
 	"""
 	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
 	TASK_NAME = 'plot_cluster_size'
@@ -389,6 +397,15 @@ def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_
 			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
 		)
 		
+		if DUT_ROI_margin is not None:
+			ROI_size = analysis_config['DUT pitch (m)']
+			if numpy.isnan(ROI_size):
+				raise RuntimeError(f'The `ROI_size` is NaN, probably it is not configured in the analyses spreadsheet...')
+			tracks = tracks.query(f'Px>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Px<{ROI_size/2-DUT_ROI_margin}')
+			tracks = tracks.query(f'Py>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Py<{ROI_size/2-DUT_ROI_margin}')
+		
 		fig = px.scatter(
 			data_frame = tracks.reset_index().sort_values('cluster_size').astype({'cluster_size':str}),
 			title = f'Cluster size<br><sup>{RSD_analysis.pseudopath}</sup>',
@@ -405,6 +422,14 @@ def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_
 			scaleanchor = "x",
 			scaleratio = 1,
 		)
+		if draw_square:
+			fig.add_shape(
+				type = "rect",
+				x0 = -analysis_config['DUT pitch (m)']/2,
+				y0 = -analysis_config['DUT pitch (m)']/2, 
+				x1 = analysis_config['DUT pitch (m)']/2, 
+				y1 = analysis_config['DUT pitch (m)']/2,
+			)
 		fig.write_html(
 			employee.path_to_directory_of_my_task/'cluster_size.html',
 			include_plotlyjs = 'cdn',
@@ -421,7 +446,6 @@ def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_
 			employee.path_to_directory_of_my_task/'cluster_size_histogram.html',
 			include_plotlyjs = 'cdn',
 		)
-
 
 if __name__ == '__main__':
 	import sys
@@ -496,6 +520,14 @@ if __name__ == '__main__':
 		nargs = '+', # So it parses a list of things.
 		default = None,
 	)
+	parser.add_argument(
+		'--DUT_ROI_margin',
+		help = 'A float number (in meters) to be used as the margin for the ROI size.',
+		required = False,
+		dest = 'DUT_ROI_margin',
+		default = None,
+		type = float,
+	)
 	args = parser.parse_args()
 	
 	_bureaucrat = RunBureaucrat(args.directory)
@@ -507,7 +539,7 @@ if __name__ == '__main__':
 		if args.transformation_for_centering_and_leveling == True:
 			transformation_for_centering_and_leveling(_bureaucrat, force=args.force)
 		if args.plot_cluster_size == True:
-			plot_cluster_size(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs)
+			plot_cluster_size(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 	elif _bureaucrat.was_task_run_successfully('batch_info') and args.setup_analysis_for_DUT is not None:
 		setup_RSD_LGAD_analysis_within_batch(batch=_bureaucrat, DUT_name=args.setup_analysis_for_DUT)
 	else:
