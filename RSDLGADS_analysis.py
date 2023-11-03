@@ -29,12 +29,46 @@ def load_this_RSD_analysis_config(RSD_analysis:RunBureaucrat):
 	analysis_config = load_RSD_analyses_config()
 	return analysis_config.loc[(TB_campaign.run_name,TB_batch.run_name,RSD_analysis.run_name)]
 
-def load_tracks(RSD_analysis:RunBureaucrat, DUT_z_position:float):
+def load_tracks(RSD_analysis:RunBureaucrat, DUT_z_position:float, use_DUTs_as_trigger:list=None):
+	"""
+	Arguments
+	---------
+	RSD_analysis: RunBureaucrat
+		A bureaucrat pointing to the respective RSD analysis for which to
+		load the tracks.
+	DUT_z_position: float
+		The z coordinate of the DUT to project the tracks to its plane.
+	use_DUTs_as_trigger: list of str, default None
+		A list with the names of other DUTs that are present in the same batch
+		(i.e. in `RSD_analysis.parent`) that are added to the triggering
+		by requesting a coincidence between the tracks and them, e.g. `"AC 11 (0,1)"`.
+	"""
 	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
 	batch = RSD_analysis.parent
 	
 	tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
 	tracks = tracks.join(project_tracks(tracks=tracks, z_position=DUT_z_position))
+	
+	if use_DUTs_as_trigger is not None:
+		use_DUTs_as_trigger_names = set([_.split(' (')[0] for _ in use_DUTs_as_trigger])
+		trigger_DUTs_hits = []
+		for DUT_name in use_DUTs_as_trigger_names:
+			this_DUT_hits = load_hits(
+				RSD_analysis = RunBureaucrat(RSD_analysis.path_to_run_directory.parent/DUT_name),
+				DUT_hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<-5e-3", # For the moment this is hardcoded.
+			)
+			trigger_DUTs_hits.append(this_DUT_hits)
+		trigger_DUTs_hits = pandas.concat(
+			trigger_DUTs_hits,
+			join = 'outer',
+			axis = 'columns',
+		)
+		trigger_DUTs_hits = trigger_DUTs_hits[use_DUTs_as_trigger]
+		trigger_DUTs_hits['trigger_on_this_event'] = trigger_DUTs_hits.sum(axis=1)>0
+		tracks = utils.select_by_multiindex(
+			df = tracks,
+			idx = trigger_DUTs_hits.query('trigger_on_this_event == True').index,
+		)
 	
 	return tracks
 	
@@ -244,65 +278,6 @@ def plot_tracks_and_hits(RSD_analysis:RunBureaucrat, do_3D_plot:bool=False, forc
 				include_plotlyjs = 'cdn',
 			)
 
-def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False):
-	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
-	TASK_NAME = 'plot_cluster_size'
-	
-	if force==False and RSD_analysis.was_task_run_successfully(TASK_NAME):
-		return
-	
-	with RSD_analysis.handle_task(TASK_NAME) as employee:
-		analysis_config = load_this_RSD_analysis_config(RSD_analysis)
-		
-		tracks = load_tracks(
-			RSD_analysis = RSD_analysis,
-			DUT_z_position = analysis_config['DUT_z_position'],
-		)
-		hits = load_hits(
-			RSD_analysis = RSD_analysis,
-			DUT_hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
-		)
-		
-		cluster_size = hits.sum(axis=1)
-		cluster_size.name = 'cluster_size'
-		
-		tracks = tracks.join(cluster_size)
-		tracks['cluster_size'].fillna(0, inplace=True)
-		tracks['cluster_size'] = tracks['cluster_size'].astype(int)
-		
-		fig = px.scatter(
-			data_frame = tracks.reset_index().sort_values('cluster_size').astype({'cluster_size':str}),
-			title = f'Cluster size<br><sup>{RSD_analysis.pseudopath}</sup>',
-			x = 'Px',
-			y = 'Py',
-			color = 'cluster_size',
-			hover_data = ['n_run','n_event'],
-			labels = {
-				'Px': 'x (m)',
-				'Py': 'y (m)',
-			},
-		)
-		fig.update_yaxes(
-			scaleanchor = "x",
-			scaleratio = 1,
-		)
-		fig.write_html(
-			employee.path_to_directory_of_my_task/'cluster_size.html',
-			include_plotlyjs = 'cdn',
-		)
-		
-		fig = px.histogram(
-			tracks,
-			x =  'cluster_size',
-			title = f'Cluster size<br><sup>{RSD_analysis.pseudopath}</sup>',
-			text_auto = True,
-		)
-		fig.update_yaxes(type="log")
-		fig.write_html(
-			employee.path_to_directory_of_my_task/'cluster_size_histogram.html',
-			include_plotlyjs = 'cdn',
-		)
-
 def transformation_for_centering_and_leveling(RSD_analysis:RunBureaucrat, draw_square:bool=True, force:bool=False):
 	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
 	
@@ -372,6 +347,82 @@ def transformation_for_centering_and_leveling(RSD_analysis:RunBureaucrat, draw_s
 			include_plotlyjs = 'cdn',
 		)
 
+def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None):
+	"""
+	Arguments
+	---------
+	use_DUTs_as_trigger: list of str, default None
+		A list with the names of other DUTs that are present in the same batch
+		(i.e. in `RSD_analysis.parent`) that are added to the triggering
+		by requesting a coincidence between the tracks and them, e.g. `"AC 11 (0,1)"`.
+	"""
+	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	TASK_NAME = 'plot_cluster_size'
+	
+	if force==False and RSD_analysis.was_task_run_successfully(TASK_NAME):
+		return
+	
+	with RSD_analysis.handle_task(TASK_NAME) as employee:
+		analysis_config = load_this_RSD_analysis_config(RSD_analysis)
+		
+		tracks = load_tracks(
+			RSD_analysis = RSD_analysis,
+			DUT_z_position = analysis_config['DUT_z_position'],
+			use_DUTs_as_trigger = use_DUTs_as_trigger,
+		)
+		hits = load_hits(
+			RSD_analysis = RSD_analysis,
+			DUT_hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		
+		cluster_size = hits.sum(axis=1)
+		cluster_size.name = 'cluster_size'
+		
+		tracks = tracks.join(cluster_size)
+		tracks['cluster_size'].fillna(0, inplace=True)
+		tracks['cluster_size'] = tracks['cluster_size'].astype(int)
+		
+		tracks[['Px','Py']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		fig = px.scatter(
+			data_frame = tracks.reset_index().sort_values('cluster_size').astype({'cluster_size':str}),
+			title = f'Cluster size<br><sup>{RSD_analysis.pseudopath}</sup>',
+			x = 'Px',
+			y = 'Py',
+			color = 'cluster_size',
+			hover_data = ['n_run','n_event'],
+			labels = {
+				'Px': 'x (m)',
+				'Py': 'y (m)',
+			},
+		)
+		fig.update_yaxes(
+			scaleanchor = "x",
+			scaleratio = 1,
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'cluster_size.html',
+			include_plotlyjs = 'cdn',
+		)
+		
+		fig = px.histogram(
+			tracks,
+			x =  'cluster_size',
+			title = f'Cluster size<br><sup>{RSD_analysis.pseudopath}</sup>',
+			text_auto = True,
+		)
+		fig.update_yaxes(type="log")
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'cluster_size_histogram.html',
+			include_plotlyjs = 'cdn',
+		)
+
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -424,6 +475,13 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
+		'--transformation_for_centering_and_leveling',
+		help = 'Pass this flag to run `plot_cluster_size`.',
+		required = False,
+		dest = 'transformation_for_centering_and_leveling',
+		action = 'store_true'
+	)
+	parser.add_argument(
 		'--plot_cluster_size',
 		help = 'Pass this flag to run `plot_cluster_size`.',
 		required = False,
@@ -431,11 +489,12 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
-		'--transformation_for_centering_and_leveling',
-		help = 'Pass this flag to run `plot_cluster_size`.',
+		'--trigger_DUTs',
+		help = 'A list of DUT names and pixels, present in the same batch, to add to the trigger line. For example `AC\ 11\ (0,0)`',
 		required = False,
-		dest = 'transformation_for_centering_and_leveling',
-		action = 'store_true'
+		dest = 'trigger_DUTs',
+		nargs = '+', # So it parses a list of things.
+		default = None,
 	)
 	args = parser.parse_args()
 	
@@ -445,10 +504,10 @@ if __name__ == '__main__':
 			plot_distributions(_bureaucrat, force=args.force)
 		if args.plot_tracks_and_hits == True:
 			plot_tracks_and_hits(_bureaucrat, force=args.force)
-		if args.plot_cluster_size == True:
-			plot_cluster_size(_bureaucrat, force=args.force)
 		if args.transformation_for_centering_and_leveling == True:
 			transformation_for_centering_and_leveling(_bureaucrat, force=args.force)
+		if args.plot_cluster_size == True:
+			plot_cluster_size(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs)
 	elif _bureaucrat.was_task_run_successfully('batch_info') and args.setup_analysis_for_DUT is not None:
 		setup_RSD_LGAD_analysis_within_batch(batch=_bureaucrat, DUT_name=args.setup_analysis_for_DUT)
 	else:
