@@ -94,6 +94,28 @@ def load_hits(RSD_analysis:RunBureaucrat, DUT_hit_criterion:str):
 	
 	return DUT_hits
 
+def calculate_features(data:pandas.DataFrame):
+	if list(data.index.names) != ['n_run','n_event']:
+		raise ValueError(f'The index levels of `data` must be [n_run,n_event].')
+	if len({'row','col'} - set(data.columns.names)) > 0:
+		raise ValueError('Both "row" and "col" must be present in the columns levels of `data`.')
+	total_amplitude = data['Amplitude (V)'].sum(axis=1, skipna=True)
+	amplitude_shared_fraction = (data['Amplitude (V)'].stack(['row','col'])/total_amplitude).unstack(['row','col']).sort_index(axis=1)
+	total_charge = data['Collected charge (V s)'].sum(axis=1, skipna=True)
+	charge_shared_fraction = (data['Collected charge (V s)'].stack(['row','col'])/total_charge).unstack(['row','col']).sort_index(axis=1)
+	amplitude_imbalance = pandas.DataFrame(
+		{
+			'x': amplitude_shared_fraction[(0,1)].fillna(0) + amplitude_shared_fraction[(1,1)].fillna(0) - amplitude_shared_fraction[(0,0)].fillna(0) - amplitude_shared_fraction[(1,0)].fillna(0),
+			'y': amplitude_shared_fraction[(0,0)].fillna(0) + amplitude_shared_fraction[(0,1)].fillna(0) - amplitude_shared_fraction[(1,0)].fillna(0) - amplitude_shared_fraction[(1,1)].fillna(0),
+		},
+		index = amplitude_shared_fraction.index,
+	)
+	_ = {}
+	_['ASF'] = amplitude_shared_fraction
+	_['CSF'] = charge_shared_fraction
+	_['amplitude_imbalance'] = amplitude_imbalance
+	return _
+
 # Tasks ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 
 def setup_RSD_LGAD_analysis_within_batch(batch:RunBureaucrat, DUT_name:str)->RunBureaucrat:
@@ -447,6 +469,154 @@ def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_
 			include_plotlyjs = 'cdn',
 		)
 
+def plot_features(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None, DUT_ROI_margin:float=None, draw_square:bool=True):
+	"""
+	Arguments
+	---------
+	use_DUTs_as_trigger: list of str, default None
+		A list with the names of other DUTs that are present in the same batch
+		(i.e. in `RSD_analysis.parent`) that are added to the triggering
+		by requesting a coincidence between the tracks and them, e.g. `"AC 11 (0,1)"`.
+	DUT_ROI_margin: float, default None
+		If `None`, this argumet is ignored. If a float number, this defines
+		a margin to consider for the ROI of the DUT which is defined
+		by its pitch. For example, if the pitch is 500 µm and `DUT_ROI_margin=0`,
+		then only the tracks inside a square of 500 µm side are used. If,
+		instead, `DUT_ROI_margin=50e-6` then the square is reduced by 50 µm
+		in each side, i.e. margins of 50 µm are added to it. Negative values
+		are allowed, which increase the ROI.
+	"""
+	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	TASK_NAME = 'plot_features'
+	
+	if force==False and RSD_analysis.was_task_run_successfully(TASK_NAME):
+		return
+	
+	with RSD_analysis.handle_task(TASK_NAME) as employee:
+		analysis_config = load_this_RSD_analysis_config(RSD_analysis)
+		
+		tracks = load_tracks(
+			RSD_analysis = RSD_analysis,
+			DUT_z_position = analysis_config['DUT_z_position'],
+			use_DUTs_as_trigger = use_DUTs_as_trigger,
+		)
+		tracks.reset_index('n_track', inplace=True)
+		DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
+			batch = RSD_analysis.parent,
+			DUT_name = RSD_analysis.run_name,
+			variables = ['Amplitude (V)','Collected charge (V s)'],
+			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		setup_config = utils.load_setup_configuration_info(RSD_analysis.parent)
+		DUT_waveforms_data = DUT_waveforms_data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['row','col']])
+		DUT_waveforms_data.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
+		DUT_waveforms_data.set_index(['row','col'], append=True, inplace=True)
+		DUT_waveforms_data = DUT_waveforms_data.unstack(['row','col'])
+		DUT_features = calculate_features(DUT_waveforms_data)
+		
+		tracks[['Px','Py']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		if DUT_ROI_margin is not None:
+			ROI_size = analysis_config['DUT pitch (m)']
+			if numpy.isnan(ROI_size):
+				raise RuntimeError(f'The `ROI_size` is NaN, probably it is not configured in the analyses spreadsheet...')
+			tracks = tracks.query(f'Px>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Px<{ROI_size/2-DUT_ROI_margin}')
+			tracks = tracks.query(f'Py>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Py<{ROI_size/2-DUT_ROI_margin}')
+		
+		for feature_name in ['ASF','CSF']:
+			feature_data = DUT_features[feature_name]
+			feature_data.fillna(0, inplace=True)
+			feature_data = feature_data.stack(['row','col'])
+			feature_data.name = feature_name
+			feature_data = feature_data.to_frame()
+			feature_data.reset_index(['row','col'], drop=False, inplace=True)
+			feature_data = feature_data.join(tracks[['Px','Py']])
+			
+			fig = px.scatter(
+				data_frame = feature_data.reset_index().sort_values(['row','col']),
+				title = f'{feature_name}<br><sup>{RSD_analysis.pseudopath}</sup>',
+				x = 'Px',
+				y = 'Py',
+				color = feature_name,
+				hover_data = ['n_run','n_event'],
+				labels = {
+					'Px': 'x (m)',
+					'Py': 'y (m)',
+				},
+				facet_col = 'col',
+				facet_row = 'row',
+			)
+			fig.update_yaxes(
+				scaleanchor = "x",
+				scaleratio = 1,
+			)
+			fig.update_layout(coloraxis_colorbar_title_side="right")
+			if draw_square:
+				for row in [0,1]:
+					for col in [0,1]:
+						fig.add_shape(
+							type = "rect",
+							x0 = -analysis_config['DUT pitch (m)']/2,
+							y0 = -analysis_config['DUT pitch (m)']/2, 
+							x1 = analysis_config['DUT pitch (m)']/2, 
+							y1 = analysis_config['DUT pitch (m)']/2,
+							row = row+1,
+							col = col+1,
+						)
+			fig.write_html(
+				employee.path_to_directory_of_my_task/f'{feature_name}.html',
+				include_plotlyjs = 'cdn',
+			)
+		
+		for feature_name in ['amplitude_imbalance']:
+			feature_data = DUT_features[feature_name]
+			feature_data.columns.names = ['direction']
+			feature_data = feature_data.stack('direction')
+			feature_data.name = feature_name
+			feature_data = feature_data.to_frame()
+			feature_data = feature_data.join(tracks[['Px','Py']])
+			
+			fig = px.scatter(
+				data_frame = feature_data.reset_index().sort_values('direction'),
+				title = f'{feature_name}<br><sup>{RSD_analysis.pseudopath}</sup>',
+				x = 'Px',
+				y = 'Py',
+				color = feature_name,
+				hover_data = ['n_run','n_event'],
+				labels = {
+					'Px': 'x (m)',
+					'Py': 'y (m)',
+				},
+				facet_col = 'direction',
+			)
+			fig.update_yaxes(
+				scaleanchor = "x",
+				scaleratio = 1,
+			)
+			fig.update_layout(coloraxis_colorbar_title_side="right")
+			if draw_square:
+				for col in [0,1]:
+					fig.add_shape(
+						type = "rect",
+						x0 = -analysis_config['DUT pitch (m)']/2,
+						y0 = -analysis_config['DUT pitch (m)']/2, 
+						x1 = analysis_config['DUT pitch (m)']/2, 
+						y1 = analysis_config['DUT pitch (m)']/2,
+						col = col+1,
+						row = 1,
+					)
+			fig.write_html(
+				employee.path_to_directory_of_my_task/f'{feature_name}.html',
+				include_plotlyjs = 'cdn',
+			)
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -513,6 +683,13 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
+		'--plot_features',
+		help = 'Pass this flag to run `plot_features`.',
+		required = False,
+		dest = 'plot_features',
+		action = 'store_true'
+	)
+	parser.add_argument(
 		'--trigger_DUTs',
 		help = 'A list of DUT names and pixels, present in the same batch, to add to the trigger line. For example `AC\ 11\ (0,0)`',
 		required = False,
@@ -540,7 +717,10 @@ if __name__ == '__main__':
 			transformation_for_centering_and_leveling(_bureaucrat, force=args.force)
 		if args.plot_cluster_size == True:
 			plot_cluster_size(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
+		if args.plot_features == True:
+			plot_features(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 	elif _bureaucrat.was_task_run_successfully('batch_info') and args.setup_analysis_for_DUT is not None:
 		setup_RSD_LGAD_analysis_within_batch(batch=_bureaucrat, DUT_name=args.setup_analysis_for_DUT)
 	else:
 		raise RuntimeError(f"Don't know what to do in {_bureaucrat.path_to_run_directory}... Please read script help or source code.")
+	
