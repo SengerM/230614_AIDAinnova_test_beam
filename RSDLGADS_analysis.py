@@ -11,6 +11,7 @@ import plotly_utils
 from corry_stuff import load_tracks_from_batch
 import warnings
 from parse_waveforms import read_parsed_from_waveforms_from_batch
+from TILGADs_analysis import translate_and_then_rotate
 
 def load_RSD_analyses_config():
 	logging.info(f'Reading analyses config from the cloud...')
@@ -302,6 +303,75 @@ def plot_cluster_size(RSD_analysis:RunBureaucrat, force:bool=False):
 			include_plotlyjs = 'cdn',
 		)
 
+def transformation_for_centering_and_leveling(RSD_analysis:RunBureaucrat, draw_square:bool=True, force:bool=False):
+	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	
+	if force==False and RSD_analysis.was_task_run_successfully('transformation_for_centering_and_leveling'):
+		return
+	
+	with RSD_analysis.handle_task('transformation_for_centering_and_leveling') as employee:
+		batch = RSD_analysis.parent
+		
+		analysis_config = load_this_RSD_analysis_config(RSD_analysis)
+		__ = {'x_translation','y_translation','rotation_around_z_deg'}
+		if any([numpy.isnan(analysis_config[_]) for _ in __]):
+			raise RuntimeError(f'One (or more) of {__} is `NaN`, check the spreadsheet.')
+		
+		tracks = load_tracks(
+			RSD_analysis = RSD_analysis,
+			DUT_z_position = analysis_config['DUT_z_position'],
+		)
+		hits = load_hits(
+			RSD_analysis = RSD_analysis,
+			DUT_hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		
+		cluster_size = hits.sum(axis=1)
+		cluster_size.name = 'cluster_size'
+		
+		tracks = tracks.join(cluster_size)
+		tracks['cluster_size'].fillna(0, inplace=True)
+		tracks['cluster_size'] = tracks['cluster_size'].astype(int)
+		
+		tracks[['Px_transformed','Py_transformed']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		logging.info('Plotting tracks and hits on DUT...')
+		fig = px.scatter(
+			data_frame = tracks.reset_index().sort_values('cluster_size').astype({'cluster_size':str}),
+			title = f'Cluster size<br><sup>{RSD_analysis.pseudopath}</sup>',
+			x = 'Px_transformed',
+			y = 'Py_transformed',
+			color = 'cluster_size',
+			hover_data = ['n_run','n_event'],
+			labels = {
+				'Px_transformed': 'x (m)',
+				'Py_transformed': 'y (m)',
+			},
+		)
+		for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
+			method(0)
+		if draw_square:
+			fig.add_shape(
+				type = "rect",
+				x0 = -analysis_config['DUT pitch (m)']/2,
+				y0 = -analysis_config['DUT pitch (m)']/2, 
+				x1 = analysis_config['DUT pitch (m)']/2, 
+				y1 = analysis_config['DUT pitch (m)']/2,
+			)
+		fig.update_yaxes(
+			scaleanchor = "x",
+			scaleratio = 1,
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
+			include_plotlyjs = 'cdn',
+		)
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -360,6 +430,13 @@ if __name__ == '__main__':
 		dest = 'plot_cluster_size',
 		action = 'store_true'
 	)
+	parser.add_argument(
+		'--transformation_for_centering_and_leveling',
+		help = 'Pass this flag to run `plot_cluster_size`.',
+		required = False,
+		dest = 'transformation_for_centering_and_leveling',
+		action = 'store_true'
+	)
 	args = parser.parse_args()
 	
 	_bureaucrat = RunBureaucrat(args.directory)
@@ -370,6 +447,8 @@ if __name__ == '__main__':
 			plot_tracks_and_hits(_bureaucrat, force=args.force)
 		if args.plot_cluster_size == True:
 			plot_cluster_size(_bureaucrat, force=args.force)
+		if args.transformation_for_centering_and_leveling == True:
+			transformation_for_centering_and_leveling(_bureaucrat, force=args.force)
 	elif _bureaucrat.was_task_run_successfully('batch_info') and args.setup_analysis_for_DUT is not None:
 		setup_RSD_LGAD_analysis_within_batch(batch=_bureaucrat, DUT_name=args.setup_analysis_for_DUT)
 	else:
