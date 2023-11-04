@@ -733,7 +733,7 @@ def create_positions_grid_from_random_positions(positions, nx:int, ny:int, x_lim
 	with warnings.catch_warnings():
 		warnings.simplefilter("ignore")
 		x = pandas.Series(numpy.linspace(x_limits[0], x_limits[1], nx), name='x')
-		y = pandas.Series(numpy.linspace(y_limits[0], y_limits[1], nx), name='y')
+		y = pandas.Series(numpy.linspace(y_limits[0], y_limits[1], ny), name='y')
 		x.index.rename('n_x', inplace=True)
 		y.index.rename('n_y', inplace=True)
 		
