@@ -137,10 +137,18 @@ def calculate_features(data:pandas.DataFrame):
 		},
 		index = amplitude_shared_fraction.index,
 	)
+	charge_imbalance = pandas.DataFrame(
+		{
+			'x': charge_shared_fraction[(0,1)].fillna(0) + charge_shared_fraction[(1,1)].fillna(0) - charge_shared_fraction[(0,0)].fillna(0) - charge_shared_fraction[(1,0)].fillna(0),
+			'y': charge_shared_fraction[(0,0)].fillna(0) + charge_shared_fraction[(0,1)].fillna(0) - charge_shared_fraction[(1,0)].fillna(0) - charge_shared_fraction[(1,1)].fillna(0),
+		},
+		index = charge_shared_fraction.index,
+	)
 	_ = {}
 	_['ASF'] = amplitude_shared_fraction
 	_['CSF'] = charge_shared_fraction
 	_['amplitude_imbalance'] = amplitude_imbalance
+	_['charge_imbalance'] = charge_imbalance
 	return _
 
 # Tasks ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
@@ -602,7 +610,7 @@ def plot_features(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trig
 				include_plotlyjs = 'cdn',
 			)
 		
-		for feature_name in ['amplitude_imbalance']:
+		for feature_name in ['amplitude_imbalance','charge_imbalance']:
 			feature_data = DUT_features[feature_name]
 			feature_data.columns.names = ['direction']
 			feature_data = feature_data.stack('direction')
