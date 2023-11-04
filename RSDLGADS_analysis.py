@@ -95,6 +95,33 @@ def load_hits(RSD_analysis:RunBureaucrat, DUT_hit_criterion:str):
 	return DUT_hits
 
 def calculate_features(data:pandas.DataFrame):
+	"""Calculate the different features used for position reconstruction.
+	
+	Arguments
+	---------
+	data: pandas.DataFrame
+		A data frame with the data measured from the RSD sensors. Each row
+		is one event, each column one pixel's data, example:
+		```
+		              Amplitude (V)                               Collected charge (V s)                                          
+		row                       0                   1                                0                           1              
+		col                       0         1         0         1                      0             1             0             1
+		n_run n_event                                                                                                             
+		95    0                 NaN       NaN -0.004031 -0.005146                    NaN           NaN -4.824668e-12 -8.137969e-12
+			  6                 NaN       NaN -0.021686 -0.006714                    NaN           NaN -3.005961e-11 -1.079528e-11
+			  14          -0.004135       NaN -0.004243       NaN          -5.658003e-12           NaN -7.099769e-12           NaN
+			  15                NaN -0.007979       NaN       NaN                    NaN -1.311078e-11           NaN           NaN
+			  18          -0.020107 -0.015712 -0.008512 -0.008586          -2.944584e-11 -2.822604e-11 -1.378297e-11 -1.435356e-11
+		...                     ...       ...       ...       ...                    ...           ...           ...           ...
+		100   25248             NaN       NaN -0.027735 -0.016106                    NaN           NaN -4.133678e-11 -2.733657e-11
+			  25250             NaN -0.005829       NaN -0.009288                    NaN -9.100285e-12           NaN -1.310064e-11
+			  25253             NaN -0.008117 -0.008315 -0.093955                    NaN -9.754022e-12 -9.191558e-12 -1.376223e-10
+			  25258             NaN       NaN       NaN -0.008348                    NaN           NaN           NaN -1.077767e-11
+			  25259       -0.009984 -0.029141       NaN -0.013372          -1.009468e-11 -4.516632e-11           NaN -1.375321e-11
+
+		[20282 rows x 8 columns]
+		```
+	"""
 	if list(data.index.names) != ['n_run','n_event']:
 		raise ValueError(f'The index levels of `data` must be [n_run,n_event].')
 	if len({'row','col'} - set(data.columns.names)) > 0:
