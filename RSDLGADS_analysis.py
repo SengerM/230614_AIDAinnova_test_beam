@@ -12,6 +12,9 @@ from corry_stuff import load_tracks_from_batch
 import warnings
 from parse_waveforms import read_parsed_from_waveforms_from_batch
 from TILGADs_analysis import translate_and_then_rotate
+import sys
+sys.path.append('/home/msenger/code/AC-LGAD_scripts') # I am expecting to find this in here https://github.com/SengerM/AC-LGAD_scripts
+import reconstructors # https://github.com/SengerM/AC-LGAD_scripts
 
 def load_RSD_analyses_config():
 	logging.info(f'Reading analyses config from the cloud...')
@@ -652,6 +655,232 @@ def plot_features(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trig
 				include_plotlyjs = 'cdn',
 			)
 
+def create_positions_grid_from_random_positions(positions, nx:int, ny:int, x_limits:tuple, y_limits:tuple):
+	"""Create a discret xy grid of positions starting from random positions.
+	
+	Arguments
+	---------
+	positions: pandas.DataFrame
+		A data frame of the form 
+		```
+		                      x         y
+		n_run n_event                    
+		95    18      -0.000061  0.000069
+			  111     -0.000023 -0.000128
+			  157     -0.000053  0.000206
+			  442     -0.000067  0.000054
+			  483      0.000246 -0.000162
+		...                 ...       ...
+		100   24829    0.000140  0.000227
+			  24887   -0.000030  0.000086
+			  25060   -0.000085 -0.000066
+			  25141   -0.000181  0.000212
+			  25199   -0.000073  0.000181
+
+		[1095 rows x 2 columns]
+		```
+	nx, ny: int
+		Number of discrete bins in x,y.
+	x_limits, y_limits: tuple
+		A tuple with 2 floats, giving the maximum extension of the grid
+		in x,y. 
+	
+	Returns
+	-------
+	positions: pandas.DataFrame
+		The new positions with discrete values, example:
+		```
+		               n_x  n_y  n_position         x         y
+		n_run n_event                                          
+		95    18         1    2           6 -0.000083  0.000083
+			  111        1    1           5 -0.000083 -0.000083
+			  157        1    3           7 -0.000083  0.000250
+			  442        1    2           6 -0.000083  0.000083
+			  483        3    1          13  0.000250 -0.000083
+		...            ...  ...         ...       ...       ...
+		100   24829      2    3          11  0.000083  0.000250
+			  24887      1    2           6 -0.000083  0.000083
+			  25060      1    1           5 -0.000083 -0.000083
+			  25141      0    3           3 -0.000250  0.000250
+			  25199      1    3           7 -0.000083  0.000250
+
+		[1095 rows x 5 columns]
+		```
+	new_positions_table: pandas.DataFrame
+		A table with the grid created, example:
+		```
+		         n_position         x         y
+		n_x n_y                                
+		0   0             0 -0.000250 -0.000250
+			1             1 -0.000250 -0.000083
+			2             2 -0.000250  0.000083
+			3             3 -0.000250  0.000250
+		1   0             4 -0.000083 -0.000250
+			1             5 -0.000083 -0.000083
+			2             6 -0.000083  0.000083
+			3             7 -0.000083  0.000250
+		2   0             8  0.000083 -0.000250
+			1             9  0.000083 -0.000083
+			2            10  0.000083  0.000083
+			3            11  0.000083  0.000250
+		3   0            12  0.000250 -0.000250
+			1            13  0.000250 -0.000083
+			2            14  0.000250  0.000083
+			3            15  0.000250  0.000250
+		```
+	"""
+	positions = positions.copy() # Don't want to touch the original.
+	with warnings.catch_warnings():
+		warnings.simplefilter("ignore")
+		x = pandas.Series(numpy.linspace(x_limits[0], x_limits[1], nx), name='x')
+		y = pandas.Series(numpy.linspace(y_limits[0], y_limits[1], nx), name='y')
+		x.index.rename('n_x', inplace=True)
+		y.index.rename('n_y', inplace=True)
+		
+		x_for_table = x.to_frame()
+		y_for_table = y.to_frame()
+		for xy in [x_for_table,y_for_table]:
+			xy.reset_index(drop=False, inplace=True)
+		new_positions_table = x_for_table.merge(y_for_table, how='cross')
+		new_positions_table.index.rename('n_position', inplace=True)
+		new_positions_table.reset_index(drop=False, inplace=True)
+		new_positions_table.set_index(['n_x','n_y'], inplace=True)
+		
+		for xy_label, xy in {'x':x, 'y':y}.items():
+			positions[f'n_{xy_label}'] = 0
+			for n_xy,_xy in xy[1:].items():
+				positions.loc[positions[xy_label]>(_xy-(xy[n_xy]-xy[n_xy-1])/2),f'n_{xy_label}'] += 1
+		positions = positions.drop(columns=['x','y'])
+		index_cols = positions.index.names
+		positions.reset_index(inplace=True, drop=False)
+		positions.set_index(new_positions_table.index.names, inplace=True)
+		positions = positions.join(new_positions_table)
+		positions.reset_index(inplace=True, drop=False)
+		positions.set_index(index_cols, inplace=True)
+		positions.sort_index(inplace=True)
+	
+	return positions, new_positions_table
+
+def train_reconstructors(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None, DUT_ROI_margin:float=None, draw_square:bool=True):
+	"""
+	Arguments
+	---------
+	use_DUTs_as_trigger: list of str, default None
+		A list with the names of other DUTs that are present in the same batch
+		(i.e. in `RSD_analysis.parent`) that are added to the triggering
+		by requesting a coincidence between the tracks and them, e.g. `"AC 11 (0,1)"`.
+	DUT_ROI_margin: float, default None
+		If `None`, this argumet is ignored. If a float number, this defines
+		a margin to consider for the ROI of the DUT which is defined
+		by its pitch. For example, if the pitch is 500 µm and `DUT_ROI_margin=0`,
+		then only the tracks inside a square of 500 µm side are used. If,
+		instead, `DUT_ROI_margin=50e-6` then the square is reduced by 50 µm
+		in each side, i.e. margins of 50 µm are added to it. Negative values
+		are allowed, which increase the ROI.
+	"""
+	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	TASK_NAME = 'train_reconstructors'
+	
+	if force==False and RSD_analysis.was_task_run_successfully(TASK_NAME):
+		return
+	
+	with RSD_analysis.handle_task(TASK_NAME) as employee:
+		analysis_config = load_this_RSD_analysis_config(RSD_analysis)
+		
+		tracks = load_tracks(
+			RSD_analysis = RSD_analysis,
+			DUT_z_position = analysis_config['DUT_z_position'],
+			use_DUTs_as_trigger = use_DUTs_as_trigger,
+		)
+		tracks.reset_index('n_track', inplace=True)
+		DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
+			batch = RSD_analysis.parent,
+			DUT_name = RSD_analysis.run_name,
+			variables = ['Amplitude (V)','Collected charge (V s)'],
+			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		setup_config = utils.load_setup_configuration_info(RSD_analysis.parent)
+		DUT_waveforms_data = DUT_waveforms_data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['row','col']])
+		DUT_waveforms_data.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
+		DUT_waveforms_data.set_index(['row','col'], append=True, inplace=True)
+		DUT_waveforms_data = DUT_waveforms_data.unstack(['row','col'])
+		DUT_features = calculate_features(DUT_waveforms_data)
+		
+		tracks[['Px','Py']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		if DUT_ROI_margin is not None:
+			ROI_size = analysis_config['DUT pitch (m)']
+			if numpy.isnan(ROI_size):
+				raise RuntimeError(f'The `ROI_size` is NaN, probably it is not configured in the analyses spreadsheet...')
+			tracks = tracks.query(f'Px>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Px<{ROI_size/2-DUT_ROI_margin}')
+			tracks = tracks.query(f'Py>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Py<{ROI_size/2-DUT_ROI_margin}')
+		
+		################################################################
+		# First of all, convert the current data format to the format expected
+		# by the reconstructors.
+		
+		positions = tracks[['Px','Py']]
+		with warnings.catch_warnings():
+			warnings.simplefilter("ignore")
+			positions.rename(columns={'Px':'x','Py':'y'}, inplace=True)
+		positions_discretized, positions_grid = create_positions_grid_from_random_positions(
+			positions, 
+			nx = 4, 
+			ny = 4,
+			x_limits = (positions['x'].min(), positions['x'].max()),
+			y_limits = (positions['y'].min(), positions['y'].max()),
+		)
+		
+		print(positions)
+		print(positions_discretized)
+		print(positions_grid)
+		a
+		
+		data_for_reconstructors = {}
+		
+		for feature_name in ['ASF','CSF']:
+			data = DUT_features[feature_name]
+			data.columns = [f'{feature_name} ({row},{col})' for row,col in data.columns]
+			data = data.fillna(0)
+			data = data.merge(positions, how='inner', left_index=True, right_index=True)
+			data_for_reconstructors[feature_name] = data
+		
+		for feature_name in ['amplitude_imbalance','charge_imbalance']:
+			data = DUT_features[feature_name]
+			data.columns = [f'{feature_name} {direction}' for direction in data.columns]
+			data_for_reconstructors[feature_name] = data
+		
+		RECONSTRUCTORS_TO_TEST = [
+			dict(
+				reconstructor = reconstructors.LookupTablePositionReconstructor(),
+				training_data = data_for_reconstructors['ASF'],
+				testing_data = data_for_reconstructors['ASF'],
+				features_variables_names = [col for col in data_for_reconstructors['ASF'] if col not in {'x','y'}],
+				reconstructor_name = 'LookupTablePositionReconstructor_using_ASF',
+				reconstructor_fit_kwargs = dict(),
+				reconstructor_reconstruct_kwargs = dict(
+					batch_size = 11111,
+				),
+			),
+		]
+		
+		# ~ reconstructor = stuff['reconstructor']
+		# ~ logging.info(f'Training {repr(stuff["reconstructor_name"])}...')
+		# ~ reconstructor.fit(
+			# ~ positions = training_data[POSITION_VARIABLES_NAMES],
+			# ~ features = training_data[stuff['features_variables_names']],
+			# ~ **stuff['reconstructor_fit_kwargs'],
+		# ~ )
+		# ~ with open(employee.path_to_directory_of_my_task/'reconstructor.pickle', 'wb') as ofile:
+			# ~ pickle.dump(reconstructor, ofile, pickle.HIGHEST_PROTOCOL)
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -725,6 +954,13 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
+		'--train_reconstructors',
+		help = 'Pass this flag to run `train_reconstructors`.',
+		required = False,
+		dest = 'train_reconstructors',
+		action = 'store_true'
+	)
+	parser.add_argument(
 		'--trigger_DUTs',
 		help = 'A list of DUT names and pixels, present in the same batch, to add to the trigger line. For example `AC\ 11\ (0,0)`',
 		required = False,
@@ -754,6 +990,8 @@ if __name__ == '__main__':
 			plot_cluster_size(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 		if args.plot_features == True:
 			plot_features(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
+		if args.train_reconstructors == True:
+			train_reconstructors(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 	elif _bureaucrat.was_task_run_successfully('batch_info') and args.setup_analysis_for_DUT is not None:
 		setup_RSD_LGAD_analysis_within_batch(batch=_bureaucrat, DUT_name=args.setup_analysis_for_DUT)
 	else:
