@@ -15,6 +15,9 @@ from TILGADs_analysis import translate_and_then_rotate
 import sys
 sys.path.append('/home/msenger/code/AC-LGAD_scripts') # I am expecting to find this in here https://github.com/SengerM/AC-LGAD_scripts
 import reconstructors # https://github.com/SengerM/AC-LGAD_scripts
+import matplotlib.pyplot as plt
+import json
+import pickle
 
 def load_RSD_analyses_config():
 	logging.info(f'Reading analyses config from the cloud...')
@@ -761,6 +764,72 @@ def create_positions_grid_from_random_positions(positions, nx:int, ny:int, x_lim
 	
 	return positions, new_positions_table
 
+def new_position_reconstruction(RSD_analysis:RunBureaucrat, reconstructor:reconstructors.RSDPositionReconstructor, features, positions, reconstructor_name:str, position_grid_parameters:dict, metadata:dict=None, reconstructor_fit_kwargs=None, do_quiver_plot:bool=True):
+	"""Creates and trains (fit) a new position reconstructor for RSD."""
+	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	
+	if len(features) != len(positions):
+		raise ValueError(f'`features` and `positions` have different lengths.')
+	
+	with RSD_analysis.handle_task('position_reconstruction', drop_old_data=False) as employee:
+		reconstructor_bureaucrat = employee.create_subrun(reconstructor_name, if_exists='skip')
+		with reconstructor_bureaucrat.handle_task('train') as employee_train:
+			with open(employee_train.path_to_directory_of_my_task/'train_parameters.json', 'w') as ofile:
+				json.dump(
+					dict(
+						position_grid_parameters = position_grid_parameters,
+						reconstructor_type = str(type(reconstructor)),
+						metadata = metadata,
+						number_of_events_in_train_dataset = len(features),
+					), 
+					ofile,
+					indent = '\t',
+				)
+			
+			positions_discretized, positions_grid = create_positions_grid_from_random_positions(
+				positions = positions,
+				nx = position_grid_parameters['n_x'], 
+				ny = position_grid_parameters['n_y'],
+				x_limits = (position_grid_parameters['x_min'], position_grid_parameters['x_max']),
+				y_limits = (position_grid_parameters['y_min'], position_grid_parameters['y_max']),
+			)
+			
+			if do_quiver_plot:
+				logging.info('Producing grid plot...')
+				fig, ax = plt.subplots()
+				ax.quiver(
+					positions['x'],
+					positions['y'],
+					(positions_discretized['x']-positions['x']),
+					(positions_discretized['y']-positions['y']),
+					angles = 'xy',
+					scale_units = 'xy',
+					scale = 1,
+				)
+				ax.scatter(
+					x = positions_grid['x'],
+					y = positions_grid['y'],
+					c = 'red',
+				)
+				ax.set_aspect('equal')
+				ax.set_xlabel('x (m)')
+				ax.set_ylabel('y (m)')
+				plt.title(f'Position grid discretization\n{reconstructor_bureaucrat.pseudopath}')
+				for fmt in {'png','pdf'}:
+					plt.savefig(employee_train.path_to_directory_of_my_task/f'positions_grid.{fmt}')
+			
+			logging.info(f'Fitting reconstructor...')
+			if reconstructor_fit_kwargs is None:
+				reconstructor_fit_kwargs = dict()
+			
+			reconstructor.fit(
+				positions = positions_discretized.set_index('n_position', append=True)[['x','y']],
+				features = features.join(positions_discretized['n_position']),
+				**reconstructor_fit_kwargs,
+			)
+			with open(employee_train.path_to_directory_of_my_task/'reconstructor.pickle', 'wb') as ofile:
+				pickle.dump(reconstructor, ofile, pickle.HIGHEST_PROTOCOL)
+
 def train_reconstructors(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None, DUT_ROI_margin:float=None, draw_square:bool=True):
 	"""
 	Arguments
@@ -779,107 +848,95 @@ def train_reconstructors(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_
 		are allowed, which increase the ROI.
 	"""
 	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
-	TASK_NAME = 'train_reconstructors'
+	TASK_NAME = 'deleteme'
 	
 	if force==False and RSD_analysis.was_task_run_successfully(TASK_NAME):
 		return
 	
-	with RSD_analysis.handle_task(TASK_NAME) as employee:
-		analysis_config = load_this_RSD_analysis_config(RSD_analysis)
-		
-		tracks = load_tracks(
+	analysis_config = load_this_RSD_analysis_config(RSD_analysis)
+	
+	tracks = load_tracks(
+		RSD_analysis = RSD_analysis,
+		DUT_z_position = analysis_config['DUT_z_position'],
+		use_DUTs_as_trigger = use_DUTs_as_trigger,
+	)
+	tracks.reset_index('n_track', inplace=True)
+	DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
+		batch = RSD_analysis.parent,
+		DUT_name = RSD_analysis.run_name,
+		variables = ['Amplitude (V)','Collected charge (V s)'],
+		additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+	)
+	setup_config = utils.load_setup_configuration_info(RSD_analysis.parent)
+	DUT_waveforms_data = DUT_waveforms_data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['row','col']])
+	DUT_waveforms_data.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
+	DUT_waveforms_data.set_index(['row','col'], append=True, inplace=True)
+	DUT_waveforms_data = DUT_waveforms_data.unstack(['row','col'])
+	DUT_features = calculate_features(DUT_waveforms_data)
+	
+	tracks[['Px','Py']] = translate_and_then_rotate(
+		points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+		x_translation = analysis_config['x_translation'],
+		y_translation = analysis_config['y_translation'],
+		angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+	)
+	
+	if DUT_ROI_margin is not None:
+		ROI_size = analysis_config['DUT pitch (m)']
+		if numpy.isnan(ROI_size):
+			raise RuntimeError(f'The `ROI_size` is NaN, probably it is not configured in the analyses spreadsheet...')
+		tracks = tracks.query(f'Px>{-ROI_size/2+DUT_ROI_margin}')
+		tracks = tracks.query(f'Px<{ROI_size/2-DUT_ROI_margin}')
+		tracks = tracks.query(f'Py>{-ROI_size/2+DUT_ROI_margin}')
+		tracks = tracks.query(f'Py<{ROI_size/2-DUT_ROI_margin}')
+	
+	################################################################
+	# First of all, convert the current data format to the format expected by the reconstructors.
+	
+	positions = tracks[['Px','Py']]
+	with warnings.catch_warnings():
+		warnings.simplefilter("ignore")
+		positions.rename(columns={'Px':'x','Py':'y'}, inplace=True)
+	
+	data_for_reconstructors = {}
+	
+	for feature_name in ['ASF','CSF']:
+		data = DUT_features[feature_name]
+		data.columns = [f'{feature_name} ({row},{col})' for row,col in data.columns]
+		data = data.fillna(0)
+		# ~ data = data.merge(positions, how='inner', left_index=True, right_index=True)
+		data = utils.select_by_multiindex(data, positions.index)
+		data_for_reconstructors[feature_name] = data
+	
+	for feature_name in ['amplitude_imbalance','charge_imbalance']:
+		data = DUT_features[feature_name]
+		data.columns = [f'{feature_name} {direction}' for direction in data.columns]
+		data = utils.select_by_multiindex(data, positions.index)
+		data_for_reconstructors[feature_name] = data
+	
+	for n_grid in [2,3,4,5,7,11,22]:
+		new_position_reconstruction(
 			RSD_analysis = RSD_analysis,
-			DUT_z_position = analysis_config['DUT_z_position'],
-			use_DUTs_as_trigger = use_DUTs_as_trigger,
-		)
-		tracks.reset_index('n_track', inplace=True)
-		DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
-			batch = RSD_analysis.parent,
-			DUT_name = RSD_analysis.run_name,
-			variables = ['Amplitude (V)','Collected charge (V s)'],
-			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
-		)
-		setup_config = utils.load_setup_configuration_info(RSD_analysis.parent)
-		DUT_waveforms_data = DUT_waveforms_data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['row','col']])
-		DUT_waveforms_data.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
-		DUT_waveforms_data.set_index(['row','col'], append=True, inplace=True)
-		DUT_waveforms_data = DUT_waveforms_data.unstack(['row','col'])
-		DUT_features = calculate_features(DUT_waveforms_data)
-		
-		tracks[['Px','Py']] = translate_and_then_rotate(
-			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
-			x_translation = analysis_config['x_translation'],
-			y_translation = analysis_config['y_translation'],
-			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
-		)
-		
-		if DUT_ROI_margin is not None:
-			ROI_size = analysis_config['DUT pitch (m)']
-			if numpy.isnan(ROI_size):
-				raise RuntimeError(f'The `ROI_size` is NaN, probably it is not configured in the analyses spreadsheet...')
-			tracks = tracks.query(f'Px>{-ROI_size/2+DUT_ROI_margin}')
-			tracks = tracks.query(f'Px<{ROI_size/2-DUT_ROI_margin}')
-			tracks = tracks.query(f'Py>{-ROI_size/2+DUT_ROI_margin}')
-			tracks = tracks.query(f'Py<{ROI_size/2-DUT_ROI_margin}')
-		
-		################################################################
-		# First of all, convert the current data format to the format expected
-		# by the reconstructors.
-		
-		positions = tracks[['Px','Py']]
-		with warnings.catch_warnings():
-			warnings.simplefilter("ignore")
-			positions.rename(columns={'Px':'x','Py':'y'}, inplace=True)
-		positions_discretized, positions_grid = create_positions_grid_from_random_positions(
-			positions, 
-			nx = 4, 
-			ny = 4,
-			x_limits = (positions['x'].min(), positions['x'].max()),
-			y_limits = (positions['y'].min(), positions['y'].max()),
-		)
-		
-		print(positions)
-		print(positions_discretized)
-		print(positions_grid)
-		a
-		
-		data_for_reconstructors = {}
-		
-		for feature_name in ['ASF','CSF']:
-			data = DUT_features[feature_name]
-			data.columns = [f'{feature_name} ({row},{col})' for row,col in data.columns]
-			data = data.fillna(0)
-			data = data.merge(positions, how='inner', left_index=True, right_index=True)
-			data_for_reconstructors[feature_name] = data
-		
-		for feature_name in ['amplitude_imbalance','charge_imbalance']:
-			data = DUT_features[feature_name]
-			data.columns = [f'{feature_name} {direction}' for direction in data.columns]
-			data_for_reconstructors[feature_name] = data
-		
-		RECONSTRUCTORS_TO_TEST = [
-			dict(
-				reconstructor = reconstructors.LookupTablePositionReconstructor(),
-				training_data = data_for_reconstructors['ASF'],
-				testing_data = data_for_reconstructors['ASF'],
-				features_variables_names = [col for col in data_for_reconstructors['ASF'] if col not in {'x','y'}],
-				reconstructor_name = 'LookupTablePositionReconstructor_using_ASF',
-				reconstructor_fit_kwargs = dict(),
-				reconstructor_reconstruct_kwargs = dict(
-					batch_size = 11111,
-				),
+			reconstructor = reconstructors.LookupTablePositionReconstructor(),
+			features = data_for_reconstructors['ASF'],
+			positions = positions,
+			reconstructor_name = f'lookup_table_{n_grid}x{n_grid}', 
+			position_grid_parameters = dict(
+				n_x = n_grid,
+				n_y = n_grid,
+				x_max = positions['x'].max(),
+				x_min = positions['x'].min(),
+				y_max = positions['y'].max(),
+				y_min = positions['y'].min(),
 			),
-		]
-		
-		# ~ reconstructor = stuff['reconstructor']
-		# ~ logging.info(f'Training {repr(stuff["reconstructor_name"])}...')
-		# ~ reconstructor.fit(
-			# ~ positions = training_data[POSITION_VARIABLES_NAMES],
-			# ~ features = training_data[stuff['features_variables_names']],
-			# ~ **stuff['reconstructor_fit_kwargs'],
-		# ~ )
-		# ~ with open(employee.path_to_directory_of_my_task/'reconstructor.pickle', 'wb') as ofile:
-			# ~ pickle.dump(reconstructor, ofile, pickle.HIGHEST_PROTOCOL)
+			metadata = dict(
+				use_DUTs_as_trigger = use_DUTs_as_trigger,
+				DUT_ROI_margin = DUT_ROI_margin,
+			),
+			do_quiver_plot = True,
+		)
+	
+	a
 
 if __name__ == '__main__':
 	import sys
