@@ -658,6 +658,121 @@ def plot_features(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trig
 				include_plotlyjs = 'cdn',
 			)
 
+def position_reconstruction_with_charge_imbalance(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None, DUT_ROI_margin:float=None, draw_square:bool=True):
+	"""
+	Arguments
+	---------
+	use_DUTs_as_trigger: list of str, default None
+		A list with the names of other DUTs that are present in the same batch
+		(i.e. in `RSD_analysis.parent`) that are added to the triggering
+		by requesting a coincidence between the tracks and them, e.g. `"AC 11 (0,1)"`.
+	DUT_ROI_margin: float, default None
+		If `None`, this argumet is ignored. If a float number, this defines
+		a margin to consider for the ROI of the DUT which is defined
+		by its pitch. For example, if the pitch is 500 µm and `DUT_ROI_margin=0`,
+		then only the tracks inside a square of 500 µm side are used. If,
+		instead, `DUT_ROI_margin=50e-6` then the square is reduced by 50 µm
+		in each side, i.e. margins of 50 µm are added to it. Negative values
+		are allowed, which increase the ROI.
+	"""
+	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	TASK_NAME = 'position_reconstruction_with_charge_imbalance'
+	
+	if force==False and RSD_analysis.was_task_run_successfully(TASK_NAME):
+		return
+	
+	with RSD_analysis.handle_task(TASK_NAME) as employee:
+		analysis_config = load_this_RSD_analysis_config(RSD_analysis)
+		
+		if numpy.isnan(analysis_config['DUT pitch (m)']):
+			raise RuntimeError(f"`analysis_config['DUT pitch (m)']` is NaN, please fill it in the spreadsheet for {RSD_analysis.pseudopath}.")
+		
+		tracks = load_tracks(
+			RSD_analysis = RSD_analysis,
+			DUT_z_position = analysis_config['DUT_z_position'],
+			use_DUTs_as_trigger = use_DUTs_as_trigger,
+		)
+		tracks.reset_index('n_track', inplace=True)
+		DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
+			batch = RSD_analysis.parent,
+			DUT_name = RSD_analysis.run_name,
+			variables = ['Amplitude (V)','Collected charge (V s)'],
+			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		)
+		setup_config = utils.load_setup_configuration_info(RSD_analysis.parent)
+		DUT_waveforms_data = DUT_waveforms_data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['row','col']])
+		DUT_waveforms_data.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
+		DUT_waveforms_data.set_index(['row','col'], append=True, inplace=True)
+		DUT_waveforms_data = DUT_waveforms_data.unstack(['row','col'])
+		DUT_features = calculate_features(DUT_waveforms_data)
+		
+		tracks[['Px','Py']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		if DUT_ROI_margin is not None:
+			ROI_size = analysis_config['DUT pitch (m)']
+			if numpy.isnan(ROI_size):
+				raise RuntimeError(f'The `ROI_size` is NaN, probably it is not configured in the analyses spreadsheet...')
+			tracks = tracks.query(f'Px>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Px<{ROI_size/2-DUT_ROI_margin}')
+			tracks = tracks.query(f'Py>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Py<{ROI_size/2-DUT_ROI_margin}')
+		
+		reconstructed = {}
+		for feature_name in ['amplitude_imbalance','charge_imbalance']:
+			reco = DUT_features[feature_name]*analysis_config['DUT pitch (m)']
+			reco.rename(columns={'x':'x (m)','y':'y (m)'}, inplace=True)
+			reconstructed[feature_name] = reco
+		
+		telescope_positions = tracks[['Px','Py']]
+		telescope_positions.rename(columns={'Px':'x (m)','Py':'y (m)'}, inplace=True)
+		for feature_name, reco in reconstructed.items():
+			reco = utils.select_by_multiindex(reco, telescope_positions.index)
+			reco_error = reco - telescope_positions
+			reco_error.rename(columns={'x (m)':'Reconstruction error x (m)','y (m)':'Reconstruction error y (m)'}, inplace=True)
+			reco_error['Reconstruction error (m)'] = sum([reco_error[f'Reconstruction error {_} (m)']**2 for _ in {'x','y'}])**.5
+			reco_error = reco_error.join(telescope_positions[['x (m)','y (m)']])
+			
+			fig = px.ecdf(
+				data_frame = reco_error.reset_index(drop=False),
+				title = f'Reconstruction error using {feature_name}<br><sup>{RSD_analysis.pseudopath}</sup>',
+				x = 'Reconstruction error (m)',
+				marginal = 'histogram',
+			)
+			fig.write_html(
+				employee.path_to_directory_of_my_task/f'reconstruction_error_using_{feature_name}_histogram.html',
+				include_plotlyjs = 'cdn',
+			)
+			
+			fig = px.scatter(
+				data_frame = reco_error.sort_index().reset_index(drop=False).query('`Reconstruction error (m)`<600e-6'),
+				title = f'Reconstruction error using {feature_name}<br><sup>{RSD_analysis.pseudopath}</sup>',
+				x = 'x (m)',
+				y = 'y (m)',
+				color = 'Reconstruction error (m)',
+				hover_data = ['n_run','n_event'],
+			)
+			fig.update_yaxes(
+				scaleanchor = "x",
+				scaleratio = 1,
+			)
+			fig.update_layout(coloraxis_colorbar_title_side="right")
+			if draw_square:
+				fig.add_shape(
+					type = "rect",
+					x0 = -analysis_config['DUT pitch (m)']/2,
+					y0 = -analysis_config['DUT pitch (m)']/2, 
+					x1 = analysis_config['DUT pitch (m)']/2, 
+					y1 = analysis_config['DUT pitch (m)']/2,
+				)
+			fig.write_html(
+				employee.path_to_directory_of_my_task/f'reconstruction_error_using_{feature_name}_scatter.html',
+				include_plotlyjs = 'cdn',
+			)
 def create_positions_grid_from_random_positions(positions, nx:int, ny:int, x_limits:tuple, y_limits:tuple):
 	"""Create a discret xy grid of positions starting from random positions.
 	
@@ -1011,6 +1126,13 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
+		'--position_reconstruction_with_charge_imbalance',
+		help = 'Pass this flag to run `position_reconstruction_with_charge_imbalance`.',
+		required = False,
+		dest = 'position_reconstruction_with_charge_imbalance',
+		action = 'store_true'
+	)
+	parser.add_argument(
 		'--train_reconstructors',
 		help = 'Pass this flag to run `train_reconstructors`.',
 		required = False,
@@ -1047,6 +1169,8 @@ if __name__ == '__main__':
 			plot_cluster_size(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 		if args.plot_features == True:
 			plot_features(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
+		if args.position_reconstruction_with_charge_imbalance == True:
+			position_reconstruction_with_charge_imbalance(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 		if args.train_reconstructors == True:
 			train_reconstructors(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 	elif _bureaucrat.was_task_run_successfully('batch_info') and args.setup_analysis_for_DUT is not None:
