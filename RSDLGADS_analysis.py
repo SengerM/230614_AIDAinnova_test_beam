@@ -35,7 +35,7 @@ def load_this_RSD_analysis_config(RSD_analysis:RunBureaucrat):
 	analysis_config = load_RSD_analyses_config()
 	return analysis_config.loc[(TB_campaign.run_name,TB_batch.run_name,RSD_analysis.run_name)]
 
-def load_tracks(RSD_analysis:RunBureaucrat, DUT_z_position:float, use_DUTs_as_trigger:list=None):
+def load_tracks(RSD_analysis:RunBureaucrat, DUT_z_position:float, use_DUTs_as_trigger:list=None, max_chi2dof:float=None):
 	"""
 	Arguments
 	---------
@@ -76,6 +76,10 @@ def load_tracks(RSD_analysis:RunBureaucrat, DUT_z_position:float, use_DUTs_as_tr
 			idx = trigger_DUTs_hits.query('trigger_on_this_event == True').index,
 		)
 	
+	tracks['chi2/ndof'] = tracks['chi2']/tracks['ndof']
+	if max_chi2dof is not None:
+		tracks = tracks.query(f'`chi2/ndof`<{max_chi2dof}')
+		
 	return tracks
 	
 def load_hits(RSD_analysis:RunBureaucrat, DUT_hit_criterion:str):
@@ -691,6 +695,7 @@ def position_reconstruction_with_charge_imbalance(RSD_analysis:RunBureaucrat, fo
 			RSD_analysis = RSD_analysis,
 			DUT_z_position = analysis_config['DUT_z_position'],
 			use_DUTs_as_trigger = use_DUTs_as_trigger,
+			max_chi2dof = 2,
 		)
 		tracks.reset_index('n_track', inplace=True)
 		DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
@@ -728,8 +733,20 @@ def position_reconstruction_with_charge_imbalance(RSD_analysis:RunBureaucrat, fo
 			reco.rename(columns={'x':'x (m)','y':'y (m)'}, inplace=True)
 			reconstructed[feature_name] = reco
 		
-		telescope_positions = tracks[['Px','Py']]
+		telescope_positions = tracks[['Px','Py','chi2/ndof']]
 		telescope_positions.rename(columns={'Px':'x (m)','Py':'y (m)'}, inplace=True)
+		
+		fig = px.ecdf(
+			data_frame = telescope_positions.reset_index(drop=False),
+			title = f'Telescope tracks quality<br><sup>{RSD_analysis.pseudopath}</sup>',
+			x = 'chi2/ndof',
+			marginal = 'histogram',
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/f'telescope_chi2_over_ndof.html',
+			include_plotlyjs = 'cdn',
+		)
+		
 		for feature_name, reco in reconstructed.items():
 			reco = utils.select_by_multiindex(reco, telescope_positions.index)
 			reco_error = reco - telescope_positions
