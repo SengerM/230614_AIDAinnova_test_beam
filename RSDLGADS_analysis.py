@@ -724,7 +724,7 @@ def position_reconstruction_with_charge_imbalance(RSD_analysis:RunBureaucrat, fo
 		
 		reconstructed = {}
 		for feature_name in ['amplitude_imbalance','charge_imbalance']:
-			reco = DUT_features[feature_name]*analysis_config['DUT pitch (m)']
+			reco = DUT_features[feature_name]*analysis_config['DUT pitch (m)']/2
 			reco.rename(columns={'x':'x (m)','y':'y (m)'}, inplace=True)
 			reconstructed[feature_name] = reco
 		
