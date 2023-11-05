@@ -748,8 +748,9 @@ def position_reconstruction_with_charge_imbalance(RSD_analysis:RunBureaucrat, fo
 				include_plotlyjs = 'cdn',
 			)
 			
+			quantile = reco_error['Reconstruction error (m)'].quantile(.95)
 			fig = px.scatter(
-				data_frame = reco_error.sort_index().reset_index(drop=False).query('`Reconstruction error (m)`<600e-6'),
+				data_frame = reco_error.sort_index().reset_index(drop=False).query(f'`Reconstruction error (m)`<{quantile}'),
 				title = f'Reconstruction error using {feature_name}<br><sup>{RSD_analysis.pseudopath}</sup>',
 				x = 'x (m)',
 				y = 'y (m)',
