@@ -662,6 +662,97 @@ def plot_features(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trig
 				include_plotlyjs = 'cdn',
 			)
 
+def plot_waveforms_distributions_inside_ROI(RSD_analysis:RunBureaucrat, force:bool=False, DUT_ROI_margin:float=None, draw_square:bool=True):
+	"""
+	Arguments
+	---------
+	use_DUTs_as_trigger: list of str, default None
+		A list with the names of other DUTs that are present in the same batch
+		(i.e. in `RSD_analysis.parent`) that are added to the triggering
+		by requesting a coincidence between the tracks and them, e.g. `"AC 11 (0,1)"`.
+	DUT_ROI_margin: float, default None
+		If `None`, this argumet is ignored. If a float number, this defines
+		a margin to consider for the ROI of the DUT which is defined
+		by its pitch. For example, if the pitch is 500 µm and `DUT_ROI_margin=0`,
+		then only the tracks inside a square of 500 µm side are used. If,
+		instead, `DUT_ROI_margin=50e-6` then the square is reduced by 50 µm
+		in each side, i.e. margins of 50 µm are added to it. Negative values
+		are allowed, which increase the ROI.
+	"""
+	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	TASK_NAME = 'plot_waveforms_distributions_inside_ROI'
+	
+	if force==False and RSD_analysis.was_task_run_successfully(TASK_NAME):
+		return
+	
+	with RSD_analysis.handle_task(TASK_NAME) as employee:
+		analysis_config = load_this_RSD_analysis_config(RSD_analysis)
+		
+		tracks = load_tracks(
+			RSD_analysis = RSD_analysis,
+			DUT_z_position = analysis_config['DUT_z_position'],
+		)
+		tracks.reset_index('n_track', inplace=True)
+		
+		tracks[['Px','Py']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+			x_translation = analysis_config['x_translation'],
+			y_translation = analysis_config['y_translation'],
+			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+		)
+		
+		if DUT_ROI_margin is not None:
+			ROI_size = analysis_config['DUT pitch (m)']
+			if numpy.isnan(ROI_size):
+				raise RuntimeError(f'The `ROI_size` is NaN, probably it is not configured in the analyses spreadsheet...')
+			tracks = tracks.query(f'Px>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Px<{ROI_size/2-DUT_ROI_margin}')
+			tracks = tracks.query(f'Py>{-ROI_size/2+DUT_ROI_margin}')
+			tracks = tracks.query(f'Py<{ROI_size/2-DUT_ROI_margin}')
+		
+		DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
+			batch = RSD_analysis.parent,
+			DUT_name = RSD_analysis.run_name,
+			variables = ['Amplitude (V)','Collected charge (V s)','t_50 (s)','Time over 20% (s)'],
+		)
+		setup_config = utils.load_setup_configuration_info(RSD_analysis.parent)
+		DUT_waveforms_data = DUT_waveforms_data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		DUT_waveforms_data.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
+		
+		DUT_waveforms_data = utils.select_by_multiindex(DUT_waveforms_data, tracks.index)
+		DUT_waveforms_data.sort_values('DUT_name_rowcol', inplace=True)
+		DUT_waveforms_data.set_index('DUT_name_rowcol', inplace=True)
+		
+		save_plots_here = employee.path_to_directory_of_my_task/'histograms'
+		save_plots_here.mkdir()
+		for col in DUT_waveforms_data.columns:
+			fig = px.ecdf(
+				data_frame = DUT_waveforms_data.reset_index(),
+				title = f'{col} distribution<br><sup>{RSD_analysis.pseudopath}</sup>',
+				x = col,
+				color = 'DUT_name_rowcol',
+				marginal = 'histogram',
+			)
+			fig.write_html(
+				save_plots_here/f'{col}_distribution.html',
+				include_plotlyjs = 'cdn',
+			)
+		
+		save_plots_here = employee.path_to_directory_of_my_task/'scatters'
+		save_plots_here.mkdir()
+		for x,y in [('t_50 (s)','Amplitude (V)'),('Time over 20% (s)','Amplitude (V)')]:
+			fig = px.scatter(
+				data_frame = DUT_waveforms_data.reset_index(),
+				title = f'{y} vs {x} distribution<br><sup>{RSD_analysis.pseudopath}</sup>',
+				x = x,
+				y = y,
+				color = 'DUT_name_rowcol',
+			)
+			fig.write_html(
+				save_plots_here/f'{y}_vs_{x}_distribution.html',
+				include_plotlyjs = 'cdn',
+			)
+
 def position_reconstruction_with_charge_imbalance(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None, DUT_ROI_margin:float=None, draw_square:bool=True):
 	"""
 	Arguments
@@ -1144,6 +1235,13 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
+		'--plot_waveforms_distributions_inside_ROI',
+		help = 'Pass this flag to run `plot_waveforms_distributions_inside_ROI`.',
+		required = False,
+		dest = 'plot_waveforms_distributions_inside_ROI',
+		action = 'store_true'
+	)
+	parser.add_argument(
 		'--position_reconstruction_with_charge_imbalance',
 		help = 'Pass this flag to run `position_reconstruction_with_charge_imbalance`.',
 		required = False,
@@ -1189,6 +1287,8 @@ if __name__ == '__main__':
 			plot_features(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 		if args.position_reconstruction_with_charge_imbalance == True:
 			position_reconstruction_with_charge_imbalance(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
+		if args.plot_waveforms_distributions_inside_ROI == True:
+			plot_waveforms_distributions_inside_ROI(_bureaucrat, force=args.force, DUT_ROI_margin=args.DUT_ROI_margin)
 		if args.train_reconstructors == True:
 			train_reconstructors(_bureaucrat, force=args.force, use_DUTs_as_trigger=args.trigger_DUTs, DUT_ROI_margin=args.DUT_ROI_margin)
 	elif _bureaucrat.was_task_run_successfully('batch_info') and args.setup_analysis_for_DUT is not None:
