@@ -8,6 +8,10 @@ from contextlib import nullcontext
 from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
 import logging
 
+PLOTS_LABELS = {
+	'DUT_name_rowcol': 'DUT (i,j)',
+}
+
 def save_dataframe(df, name:str, location:Path):
 	for extension,method in {'pickle':df.to_pickle,'csv':df.to_csv}.items():
 		method(location/f'{name}.{extension}')

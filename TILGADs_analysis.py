@@ -1,6 +1,7 @@
 from pathlib import Path
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 import utils
+import utils_batch_level
 import logging
 import pandas
 import sqlite3
@@ -8,10 +9,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy
 import plotly_utils
-from corry_stuff import load_tracks_from_batch
 import json
 import warnings
-from parse_waveforms import read_parsed_from_waveforms_from_batch
 import multiprocessing
 from uncertainties import ufloat
 from scipy.interpolate import interp1d
@@ -27,28 +26,6 @@ def load_this_TILGAD_analysis_config(TI_LGAD_analysis:RunBureaucrat):
 	analysis_config = load_analyses_config()
 	return analysis_config.loc[(TB_campaign.run_name,TB_batch.run_name,TI_LGAD_analysis.run_name)]
 	
-def load_hits(TI_LGAD_analysis:RunBureaucrat, DUT_hit_criterion:str):
-	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
-	batch = TI_LGAD_analysis.parent
-	
-	DUT_hits = read_parsed_from_waveforms_from_batch(
-		batch = batch,
-		DUT_name = TI_LGAD_analysis.run_name,
-		variables = [], # No need for variables, only need to know which ones are hits.
-		additional_SQL_selection = DUT_hit_criterion,
-	)
-	
-	setup_config = utils.load_setup_configuration_info(batch)
-	
-	DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
-	DUT_hits.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
-	DUT_hits['has_hit'] = True
-	DUT_hits.set_index('DUT_name_rowcol',append=True,inplace=True)
-	DUT_hits = DUT_hits.unstack('DUT_name_rowcol', fill_value=False)
-	DUT_hits = DUT_hits['has_hit']
-	
-	return DUT_hits
-
 # Tasks ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 
 def setup_TI_LGAD_analysis_within_batch(batch:RunBureaucrat, DUT_name:str)->RunBureaucrat:
@@ -73,35 +50,34 @@ def setup_TI_LGAD_analysis_within_batch(batch:RunBureaucrat, DUT_name:str)->RunB
 		
 	return TILGAD_bureaucrat
 
-def plot_DUT_distributions(TI_LGAD_analysis_bureaucrat:RunBureaucrat, force:bool=False):
+def plot_DUT_distributions(TI_LGAD_analysis:RunBureaucrat, force:bool=False, maximum_number_of_events_per_plot=9999):
 	"""Plot some raw distributions, useful to configure cuts and thresholds
 	for further steps in the analysis."""
-	MAXIMUM_NUMBER_OF_EVENTS = 9999
-	TI_LGAD_analysis_bureaucrat.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis') # To be sure we are inside what is supposed to be a TI-LGAD analysis.
+	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis') # To be sure we are inside what is supposed to be a TI-LGAD analysis.
 	
-	if force==False and TI_LGAD_analysis_bureaucrat.was_task_run_successfully('plot_distributions'):
+	if force==False and TI_LGAD_analysis.was_task_run_successfully('plot_distributions'):
 		return
 	
-	with TI_LGAD_analysis_bureaucrat.handle_task('plot_distributions') as employee:
-		setup_config = utils.load_setup_configuration_info(TI_LGAD_analysis_bureaucrat.parent)
+	with TI_LGAD_analysis.handle_task('plot_distributions') as employee:
+		setup_config = utils_batch_level.load_setup_configuration_info(TI_LGAD_analysis.parent)
 		
 		save_distributions_plots_here = employee.path_to_directory_of_my_task/'distributions'
 		save_distributions_plots_here.mkdir()
 		for variable in ['Amplitude (V)','t_50 (s)','Noise (V)','Time over 50% (s)',]:
 			logging.info(f'Plotting {variable} distribution...')
-			data = read_parsed_from_waveforms_from_batch(
-				batch = TI_LGAD_analysis_bureaucrat.parent,
-				DUT_name = TI_LGAD_analysis_bureaucrat.run_name,
+			data = utils_batch_level.load_parsed_from_waveforms(
+				TB_batch = TI_LGAD_analysis.parent,
+				load_this = {DUT_name_rowcol: None for DUT_name_rowcol in set(setup_config.query(f'DUT_name == "{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 				variables = [variable],
-				n_events = MAXIMUM_NUMBER_OF_EVENTS,
 			)
-			data = data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+			data = data.sample(maximum_number_of_events_per_plot) if len(data) > maximum_number_of_events_per_plot else data
 			fig = px.ecdf(
-				data.sort_values('DUT_name_rowcol'),
-				title = f'{variable} distribution<br><sup>{TI_LGAD_analysis_bureaucrat.pseudopath}</sup>',
+				data.sort_values('DUT_name_rowcol').reset_index(drop=False),
+				title = f'{variable} distribution<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
 				x = variable,
 				marginal = 'histogram',
 				color = 'DUT_name_rowcol',
+				labels = utils.PLOTS_LABELS,
 			)
 			fig.write_html(
 				save_distributions_plots_here/f'{variable}_ECDF.html',
@@ -112,20 +88,20 @@ def plot_DUT_distributions(TI_LGAD_analysis_bureaucrat:RunBureaucrat, force:bool
 		save_scatter_plots_here.mkdir()
 		for x,y in [('t_50 (s)','Amplitude (V)'), ('Time over 50% (s)','Amplitude (V)'),]:
 			logging.info(f'Plotting {y} vs {x} scatter_plot...')
-			data = read_parsed_from_waveforms_from_batch(
-				batch = TI_LGAD_analysis_bureaucrat.parent,
-				DUT_name = TI_LGAD_analysis_bureaucrat.run_name,
+			data = utils_batch_level.load_parsed_from_waveforms(
+				TB_batch = TI_LGAD_analysis.parent,
+				load_this = {DUT_name_rowcol: None for DUT_name_rowcol in set(setup_config.query(f'DUT_name == "{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 				variables = [x,y],
-				n_events = MAXIMUM_NUMBER_OF_EVENTS,
 			)
-			data = data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+			data = data.sample(maximum_number_of_events_per_plot) if len(data) > maximum_number_of_events_per_plot else data
 			fig = px.scatter(
 				data.sort_values('DUT_name_rowcol').reset_index(drop=False),
-				title = f'{y} vs {x} scatter plot<br><sup>{TI_LGAD_analysis_bureaucrat.pseudopath}</sup>',
+				title = f'{y} vs {x} scatter plot<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
 				x = x,
 				y = y,
 				color = 'DUT_name_rowcol',
 				hover_data = ['n_run','n_event'],
+				labels = utils.PLOTS_LABELS,
 			)
 			fig.write_html(
 				save_scatter_plots_here/f'{y}_vs_{x}_scatter.html',
@@ -1380,20 +1356,20 @@ if __name__ == '__main__':
 		# ~ force = True,
 	# ~ )
 	
-	efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(
-		TI_LGAD_analysis = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230830_August/batches/subruns/batch_3/TI-LGADs_analyses/subruns/TI229')),
-		control_DUT_name = 'TI145',
-		control_DUT_amplitude_thresohld = -1.70E-02, 
-		control_DUT_pixels = [(0,0),(1,0),(0,1),(1,1)],
-		force = True,
-	)
+	# ~ efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(
+		# ~ TI_LGAD_analysis = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230830_August/batches/subruns/batch_3/TI-LGADs_analyses/subruns/TI229')),
+		# ~ control_DUT_name = 'TI145',
+		# ~ control_DUT_amplitude_thresohld = -1.70E-02, 
+		# ~ control_DUT_pixels = [(0,0),(1,0),(0,1),(1,1)],
+		# ~ force = True,
+	# ~ )
 	
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
+	# ~ AAAAAAAAAAAAAAAAAAAA
+	# ~ AAAAAAAAAAAAAAAAAAAA
+	# ~ AAAAAAAAAAAAAAAAAAAA
+	# ~ AAAAAAAAAAAAAAAAAAAA
+	# ~ AAAAAAAAAAAAAAAAAAAA
+	# ~ AAAAAAAAAAAAAAAAAAAA
 	
 	
 	parser = argparse.ArgumentParser()
