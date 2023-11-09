@@ -10,6 +10,8 @@ import logging
 
 PLOTS_LABELS = {
 	'DUT_name_rowcol': 'DUT (i,j)',
+	'Px': 'x (m)',
+	'Py': 'y (m)',
 }
 
 def save_dataframe(df, name:str, location:Path):
