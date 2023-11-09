@@ -232,32 +232,23 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 		return
 	
 	with TI_LGAD_analysis.handle_task('transformation_for_centering_and_leveling') as employee:
-		batch = TI_LGAD_analysis.parent
-		
 		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
 		__ = {'x_translation','y_translation','rotation_around_z_deg'}
 		if any([numpy.isnan(analysis_config[_]) for _ in __]):
 			raise RuntimeError(f'One (or more) of {__} is `NaN`, check the spreadsheet.')
 		
-		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
+		setup_config = utils_batch_level.load_setup_configuration_info(TI_LGAD_analysis.parent)
 		
-		logging.info('Projecting tracks onto DUT...')
-		projected = project_tracks(tracks, z=analysis_config['DUT_z_position'])
-		tracks = tracks.join(projected)
+		tracks = utils_batch_level.load_tracks(TI_LGAD_analysis.parent, only_multiplicity_one=True)
+		tracks = tracks.join(tracks_utils.project_tracks(tracks, z=analysis_config['DUT_z_position']))
 		
-		DUT_hits = read_parsed_from_waveforms_from_batch(
-			batch = batch,
-			DUT_name = TI_LGAD_analysis.run_name,
-			variables = [], # No need for variables, only need to know which ones are hits.
-			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}"
+		DUT_hits = utils_batch_level.load_hits(
+			TB_batch = TI_LGAD_analysis.parent,
+			DUTs_and_hit_criterions = {DUT_name_rowcol:hit_criterion for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 		)
 		
-		setup_config = utils.load_setup_configuration_info(batch)
-		
-		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
-		
-		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
-		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
+		tracks = tracks_utils.tag_tracks_with_DUT_hits(tracks, DUT_hits)
 		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
 		
 		logging.info('Applying transformation to tracks to center and align DUT...')
@@ -271,7 +262,7 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 		logging.info('Plotting tracks and hits on DUT...')
 		fig = px.scatter(
 			tracks.reset_index(),
-			title = f'Tracks projected on the DUT after transformation<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
+			title = f'Tracks projected on the DUT after transformation<br><sup>{TI_LGAD_analysis.pseudopath}, amplitude < {analysis_config["Amplitude threshold (V)"]*1e3:.1f} mV</sup>',
 			x = 'Px',
 			y = 'Py',
 			color = 'DUT_name_rowcol',
