@@ -103,6 +103,7 @@ def tag_tracks_with_DUT_hits(tracks, DUT_hits):
 		```
 	"""
 	
+	DUT_hits = DUT_hits.copy()
 	DUT_hits.columns = pandas.MultiIndex.from_product([['has_hit'], DUT_hits.columns])
 	DUT_hits = DUT_hits.stack('DUT_name_rowcol')
 	DUT_hits = DUT_hits.reset_index('DUT_name_rowcol', drop=False)
