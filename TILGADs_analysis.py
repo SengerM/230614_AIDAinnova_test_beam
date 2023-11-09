@@ -26,27 +26,6 @@ def load_this_TILGAD_analysis_config(TI_LGAD_analysis:RunBureaucrat):
 	TB_campaign = TB_batch.parent
 	analysis_config = load_analyses_config()
 	return analysis_config.loc[(TB_campaign.run_name,TB_batch.run_name,TI_LGAD_analysis.run_name)]
-
-def project_tracks(tracks:pandas.DataFrame, z:float):
-	projected = utils.project_track_in_z(
-		A = tracks[[f'A{_}' for _ in ['x','y','z']]].to_numpy().T,
-		B = tracks[[f'B{_}' for _ in ['x','y','z']]].to_numpy().T,
-		z = z,
-	).T
-	return pandas.DataFrame(
-		projected,
-		columns = ['Px','Py','Pz'],
-		index = tracks.index,
-	)
-
-def load_tracks(TI_LGAD_analysis:RunBureaucrat, DUT_z_position:float):
-	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
-	batch = TI_LGAD_analysis.parent
-	
-	tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
-	tracks = tracks.join(project_tracks(tracks=tracks, z=DUT_z_position))
-	
-	return tracks
 	
 def load_hits(TI_LGAD_analysis:RunBureaucrat, DUT_hit_criterion:str):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
@@ -306,7 +285,6 @@ def plot_cluster_size(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 			employee.path_to_directory_of_my_task/'cluster_size_histogram.html',
 			include_plotlyjs = 'cdn',
 		)
-		a
 
 def translate_and_then_rotate(points:pandas.DataFrame, x_translation:float, y_translation:float, angle_rotation:float):
 	"""Apply a translation followed by a rotation to the points.
@@ -1033,22 +1011,78 @@ def efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(TI_LGA
 			with which_pixels_analysis.handle_task('efficiency_vs_distance') as which_pixels_employee:
 				logging.info(f'Proceeding with {which_pixels_analysis.pseudopath}...')
 				# Because this is a very artisanal analysis, different in every single case, I check this here:
-				if TI_LGAD_analysis.run_name == 'TI116' and control_DUT_name == 'TI122' and which_pixels == 'left_column':
-					xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
-					xmax = -50e-6
-					ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
-					ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
-					project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
-				if TI_LGAD_analysis.run_name == 'TI122' and control_DUT_name == 'TI116' and which_pixels == 'left_column':
-					# ~ xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
-					# ~ xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
-					xmin = -200e-6
-					xmax = 0
-					ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
-					ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
-					project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
-				else:
-					raise RuntimeError(f'This analysis not implemented for the devices you want to analyze.')
+				scenario = (
+					TI_LGAD_analysis.parent.parent.run_name, # Campaign, June or August.
+					TI_LGAD_analysis.parent.run_name, # Batch.
+					TI_LGAD_analysis.run_name, # DUT.
+					control_DUT_name,
+					which_pixels, # 'left_column', 'top_row', etc.
+				)
+				match scenario:
+					case ('230614_June','batch_2_230V','TI116','TI122','left_column'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = -50e-6
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					case ('230614_June','batch_2_230V','TI122','TI116','left_column'):
+						xmin = -200e-6
+						xmax = 0
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					
+					case ('230830_August','batch_3','TI145','TI229','left_column'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					case ('230830_August','batch_3','TI145','TI229','right_column'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					case ('230830_August','batch_3','TI145','TI229','top_row'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					case ('230830_August','batch_3','TI145','TI229','bottom_row'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					
+					case ('230830_August','batch_3','TI229','TI145','left_column'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					case ('230830_August','batch_3','TI229','TI145','right_column'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					case ('230830_August','batch_3','TI229','TI145','top_row'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					case ('230830_August','batch_3','TI229','TI145','bottom_row'):
+						xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
+						xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
+						ymin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_min']
+						ymax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['y_max']
+						project_on = PIXEL_DEPENDENT_SETTINGS[which_pixels]['project_on']
+					case _:
+						raise RuntimeError(f'This analysis not implemented for the devices you want to analyze.')
 				
 				tracks_for_efficiency_calculation = tracks.query(f'{xmin}<Px_transformed and Px_transformed<{xmax} and {ymin}<Py_transformed and Py_transformed<{ymax}')
 				
@@ -1322,6 +1356,46 @@ if __name__ == '__main__':
 	
 	set_my_template_as_default()
 	
+	
+	# ~ efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(
+		# ~ TI_LGAD_analysis = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230614_June/batches/subruns/batch_2_230V/TI-LGADs_analyses/subruns/TI116')),
+		# ~ control_DUT_name = 'TI122',
+		# ~ control_DUT_amplitude_thresohld = -7e-3, 
+		# ~ control_DUT_pixels = [(0,0),(1,0)],
+		# ~ force = True,
+	# ~ )
+	# ~ efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(
+		# ~ TI_LGAD_analysis = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230614_June/batches/subruns/batch_2_230V/TI-LGADs_analyses/subruns/TI122')),
+		# ~ control_DUT_name = 'TI116',
+		# ~ control_DUT_amplitude_thresohld = -7e-3, 
+		# ~ control_DUT_pixels = [(0,0),(1,0)],
+		# ~ force = True,
+	# ~ )
+	
+	# ~ efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(
+		# ~ TI_LGAD_analysis = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230830_August/batches/subruns/batch_3/TI-LGADs_analyses/subruns/TI145')),
+		# ~ control_DUT_name = 'TI229',
+		# ~ control_DUT_amplitude_thresohld = -10e-3, 
+		# ~ control_DUT_pixels = [(0,0),(1,0),(0,1),(1,1)],
+		# ~ force = True,
+	# ~ )
+	
+	efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(
+		TI_LGAD_analysis = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230830_August/batches/subruns/batch_3/TI-LGADs_analyses/subruns/TI229')),
+		control_DUT_name = 'TI145',
+		control_DUT_amplitude_thresohld = -1.70E-02, 
+		control_DUT_pixels = [(0,0),(1,0),(0,1),(1,1)],
+		force = True,
+	)
+	
+	AAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAA
+	AAAAAAAAAAAAAAAAAAAA
+	
+	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
 		metavar = 'path', 
@@ -1411,28 +1485,6 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
-	
-	# ~ efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(
-		# ~ TI_LGAD_analysis = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230614_June/batches/subruns/batch_2_230V/TI-LGADs_analyses/subruns/TI116')),
-		# ~ control_DUT_name = 'TI122',
-		# ~ control_DUT_amplitude_thresohld = -7e-3, 
-		# ~ control_DUT_pixels = [(0,0),(1,0)],
-		# ~ force = True,
-	# ~ )
-	efficiency_vs_distance_calculation_usin_coincidence_with_other_sensor(
-		TI_LGAD_analysis = RunBureaucrat(Path('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230614_June/batches/subruns/batch_2_230V/TI-LGADs_analyses/subruns/TI122')),
-		control_DUT_name = 'TI116',
-		control_DUT_amplitude_thresohld = -7e-3, 
-		control_DUT_pixels = [(0,0),(1,0)],
-		force = True,
-	)
-	
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
-	AAAAAAAAAAAAAAAAAAAA
 	
 	if bureaucrat.was_task_run_successfully('this_is_a_TI-LGAD_analysis'):
 		if args.plot_DUT_distributions == True:

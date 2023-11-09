@@ -104,6 +104,54 @@ def load_hits(RSD_analysis:RunBureaucrat, DUT_hit_criterion:str):
 	
 	return DUT_hits
 
+class TracksDataLoader:
+	def __init__(self, RSD_analysis:RunBureaucrat, use_DUTs_as_trigger:list=None):
+		RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+		self._RSD_analysis = RSD_analysis
+		self._use_DUTs_as_trigger = use_DUTs_as_trigger
+	
+	def get_data(self):
+		if not hasattr(self, '_tracks'):
+			analysis_config = load_this_RSD_analysis_config(self._RSD_analysis)
+			tracks = load_tracks(
+				RSD_analysis = self._RSD_analysis,
+				DUT_z_position = analysis_config['DUT_z_position'],
+				use_DUTs_as_trigger = self._use_DUTs_as_trigger,
+			)
+			tracks[['Px','Py']] = translate_and_then_rotate(
+				points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+				x_translation = analysis_config['x_translation'],
+				y_translation = analysis_config['y_translation'],
+				angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+			)
+			self._tracks = tracks
+		return self._tracks
+
+class ParsedFromWaveformsDataLoader:
+	def __init__(self, batch:RunBureaucrat, DUT_name:str, variables:list=['Amplitude (V)'], additional_SQL_selection:str=None, n_events:int=None):
+		batch.check_these_tasks_were_run_successfully('runs')
+		self._batch = batch
+		self._DUT_name = DUT_name
+		self._variables = variables
+		self._additional_SQL_selection = additional_SQL_selection
+		self._n_events = n_events
+	
+	def get_data(self):
+		if not hasattr(self, '_data'):
+			DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
+				batch = self._batch,
+				DUT_name = self._DUT_name,
+				variables = self._variables,
+				additional_SQL_selection = self._additional_SQL_selection,
+			)
+			setup_config = utils.load_setup_configuration_info(self._batch)
+			DUT_waveforms_data = DUT_waveforms_data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['row','col']])
+			DUT_waveforms_data.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
+			DUT_waveforms_data.set_index(['row','col'], append=True, inplace=True)
+			DUT_waveforms_data = DUT_waveforms_data.unstack(['row','col'])
+			self._data = DUT_waveforms_data
+		return self._data
+
 def calculate_features(data:pandas.DataFrame):
 	"""Calculate the different features used for position reconstruction.
 	
@@ -882,6 +930,7 @@ def position_reconstruction_with_charge_imbalance(RSD_analysis:RunBureaucrat, fo
 				employee.path_to_directory_of_my_task/f'reconstruction_error_using_{feature_name}_scatter.html',
 				include_plotlyjs = 'cdn',
 			)
+
 def create_positions_grid_from_random_positions(positions, nx:int, ny:int, x_limits:tuple, y_limits:tuple):
 	"""Create a discret xy grid of positions starting from random positions.
 	
@@ -988,14 +1037,14 @@ def create_positions_grid_from_random_positions(positions, nx:int, ny:int, x_lim
 	
 	return positions, new_positions_table
 
-def new_position_reconstruction(RSD_analysis:RunBureaucrat, reconstructor:reconstructors.RSDPositionReconstructor, features, positions, reconstructor_name:str, position_grid_parameters:dict, metadata:dict=None, reconstructor_fit_kwargs=None, do_quiver_plot:bool=True):
+def new_position_reconstruction(RSD_analysis:RunBureaucrat, reconstructor:reconstructors.RSDPositionReconstructor, features, positions, reconstructor_name:str, position_grid_parameters:dict, metadata:dict=None, reconstructor_fit_kwargs:dict=None, do_quiver_plot:bool=True):
 	"""Creates and trains (fit) a new position reconstructor for RSD."""
 	RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
 	
 	if len(features) != len(positions):
 		raise ValueError(f'`features` and `positions` have different lengths.')
 	
-	with RSD_analysis.handle_task('position_reconstruction', drop_old_data=False) as employee:
+	with RSD_analysis.handle_task('position_reconstructors', drop_old_data=False) as employee:
 		reconstructor_bureaucrat = employee.create_subrun(reconstructor_name, if_exists='skip')
 		with reconstructor_bureaucrat.handle_task('train') as employee_train:
 			with open(employee_train.path_to_directory_of_my_task/'train_parameters.json', 'w') as ofile:
@@ -1054,6 +1103,41 @@ def new_position_reconstruction(RSD_analysis:RunBureaucrat, reconstructor:recons
 			with open(employee_train.path_to_directory_of_my_task/'reconstructor.pickle', 'wb') as ofile:
 				pickle.dump(reconstructor, ofile, pickle.HIGHEST_PROTOCOL)
 
+# ~ def use_reconstructor(reconstructor_bureaucrat:RunBureaucrat, reconstruction_name:str, features, reconstructor_kwargs:dict=None, reconstruct_data_from_RSD_analysis:RunBureaucrat, use_DUTs_as_trigger:list=None, DUT_ROI_margin:float=None, draw_square:bool=True):
+	# ~ reconstructor_bureaucrat.check_these_tasks_were_run_successfully('train')
+	# ~ reconstructor_bureaucrat.parent.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	# ~ reconstruct_data_from_RSD_analysis.check_these_tasks_were_run_successfully('this_is_an_RSD-LGAD_analysis')
+	
+	
+	# ~ analysis_config = load_this_RSD_analysis_config(RSD_analysis)
+	
+	# ~ tracks = load_tracks(
+		# ~ RSD_analysis = RSD_analysis,
+		# ~ DUT_z_position = analysis_config['DUT_z_position'],
+		# ~ use_DUTs_as_trigger = use_DUTs_as_trigger,
+	# ~ )
+	# ~ tracks.reset_index('n_track', inplace=True)
+	
+	# ~ DUT_features = calculate_features(DUT_waveforms_data)
+	
+	# ~ tracks[['Px','Py']] = translate_and_then_rotate(
+		# ~ points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+		# ~ x_translation = analysis_config['x_translation'],
+		# ~ y_translation = analysis_config['y_translation'],
+		# ~ angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+	# ~ )
+	
+	# ~ if DUT_ROI_margin is not None:
+		# ~ ROI_size = analysis_config['DUT pitch (m)']
+		# ~ if numpy.isnan(ROI_size):
+			# ~ raise RuntimeError(f'The `ROI_size` is NaN, probably it is not configured in the analyses spreadsheet...')
+		# ~ tracks = tracks.query(f'Px>{-ROI_size/2+DUT_ROI_margin}')
+		# ~ tracks = tracks.query(f'Px<{ROI_size/2-DUT_ROI_margin}')
+		# ~ tracks = tracks.query(f'Py>{-ROI_size/2+DUT_ROI_margin}')
+		# ~ tracks = tracks.query(f'Py<{ROI_size/2-DUT_ROI_margin}')
+	
+	
+
 def train_reconstructors(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_as_trigger:list=None, DUT_ROI_margin:float=None, draw_square:bool=True):
 	"""
 	Arguments
@@ -1079,31 +1163,21 @@ def train_reconstructors(RSD_analysis:RunBureaucrat, force:bool=False, use_DUTs_
 	
 	analysis_config = load_this_RSD_analysis_config(RSD_analysis)
 	
-	tracks = load_tracks(
+	tracks_loader = TracksDataLoader(
 		RSD_analysis = RSD_analysis,
-		DUT_z_position = analysis_config['DUT_z_position'],
 		use_DUTs_as_trigger = use_DUTs_as_trigger,
 	)
 	tracks.reset_index('n_track', inplace=True)
-	DUT_waveforms_data = read_parsed_from_waveforms_from_batch(
+	DUT_waveforms_data_loader = ParsedFromWaveformsDataLoader(
 		batch = RSD_analysis.parent,
 		DUT_name = RSD_analysis.run_name,
 		variables = ['Amplitude (V)','Collected charge (V s)'],
 		additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
 	)
-	setup_config = utils.load_setup_configuration_info(RSD_analysis.parent)
-	DUT_waveforms_data = DUT_waveforms_data.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])[['row','col']])
-	DUT_waveforms_data.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
-	DUT_waveforms_data.set_index(['row','col'], append=True, inplace=True)
-	DUT_waveforms_data = DUT_waveforms_data.unstack(['row','col'])
+	
 	DUT_features = calculate_features(DUT_waveforms_data)
 	
-	tracks[['Px','Py']] = translate_and_then_rotate(
-		points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
-		x_translation = analysis_config['x_translation'],
-		y_translation = analysis_config['y_translation'],
-		angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
-	)
+	
 	
 	if DUT_ROI_margin is not None:
 		ROI_size = analysis_config['DUT pitch (m)']

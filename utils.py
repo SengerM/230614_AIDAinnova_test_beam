@@ -89,74 +89,6 @@ def setup_batch_info(bureaucrat:RunBureaucrat):
 		raise RuntimeError(f'Cannot determine which test beam campaign {bureaucrat.pseudopath} belongs to...')
 	logging.info(f'Setup info was set for {bureaucrat.pseudopath} ✅')
 
-CAENs_CHANNELS_MAPPING_TO_INTEGERS = pandas.DataFrame(
-	# This codification into integers comes from the producer, see in line 208 of `CAENDT5742Producer.py`. The reason is that EUDAQ can only handle integers tags, or something like this.
-	{
-		'CAEN_n_channel': list(range(18)),
-		'CAEN_channel_name': [f'CH{i}' if i<16 else f'trigger_group_{i-16}' for i in range(18)]
-	}
-)
-
-def load_setup_configuration_info(batch:RunBureaucrat)->pandas.DataFrame:
-	bureaucrat = batch
-	bureaucrat.check_these_tasks_were_run_successfully(['runs','batch_info'])
-	if not all([b.was_task_run_successfully('parse_waveforms') for b in bureaucrat.list_subruns_of_task('runs')]):
-		raise RuntimeError(f'To load the setup configuration it is needed that all of the runs of the batch have had the `parse_waveforms` task performed on them, but does not seem to be the case')
-	
-	if which_test_beam_campaign(bureaucrat) == '230614_June':
-		planes = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'planes.pickle')
-		signals_connections = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'signals.pickle')
-	elif which_test_beam_campaign(bureaucrat) == '230830_August':
-		planes = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'planes_definition.pickle')
-		signals_connections = pandas.read_pickle(bureaucrat.path_to_directory_of_task('batch_info')/'pixels_definition.pickle')
-		for df in [planes,signals_connections]:
-			df.rename(
-				columns = {
-					'digitizer_name': 'CAEN_name',
-					'digitizer_channel_name': 'CAEN_channel_name',
-					'chubut_channel_number': 'chubut_channel',
-				},
-				inplace = True,
-			)
-	else:
-		raise RuntimeError(f'Cannot read setup information for run {bureaucrat.run_name}')
-	
-	CAENs_names = []
-	for run in bureaucrat.list_subruns_of_task('runs'):
-		n_run = int(run.run_name.split('_')[0].replace('run',''))
-		df = pandas.read_pickle(run.path_to_directory_of_task('parse_waveforms')/f'{run.run_name}_CAENs_names.pickle')
-		df = df.to_frame()
-		df['n_run'] = n_run
-		df.set_index('n_run',append=True,inplace=True)
-		CAENs_names.append(df)
-	CAENs_names = pandas.concat(CAENs_names)
-	CAENs_names['CAEN_name'] = CAENs_names['CAEN_name'].apply(lambda x: x.replace('CAEN_',''))
-	
-	# Here we assume that the CAENs were not changed within a batch, which is reasonable.
-	_ = CAENs_names.reset_index('n_CAEN',drop=False).set_index('CAEN_name',append=True).reset_index('n_run',drop=True)
-	_ = _[~_.index.duplicated(keep='first')]
-	signals_connections = signals_connections.reset_index(drop=False).merge(
-		_,
-		on = 'CAEN_name',
-	)
-	
-	signals_connections = signals_connections.merge(
-		CAENs_CHANNELS_MAPPING_TO_INTEGERS.set_index('CAEN_channel_name')['CAEN_n_channel'],
-		on = 'CAEN_channel_name',
-	)
-	
-	signals_connections = signals_connections.merge(
-		planes['DUT_name'],
-		on = 'plane_number',
-	)
-	
-	signals_connections['CAEN_trigger_group_n'] = signals_connections['CAEN_n_channel'].apply(lambda x: 0 if x in {0,1,2,3,4,5,6,7,16} else 1 if x in {8,9,10,11,12,13,14,15,17} else -1)
-	
-	signals_connections['rowcol'] = signals_connections[['row','col']].apply(lambda x: f'{x["row"]}{x["col"]}', axis=1)
-	signals_connections['DUT_name_rowcol'] = signals_connections[['DUT_name','row','col']].apply(lambda x: f'{x["DUT_name"]} ({x["row"]},{x["col"]})', axis=1)
-	
-	return signals_connections
-
 def select_by_multiindex(df:pandas.DataFrame, idx:pandas.MultiIndex)->pandas.DataFrame:
 	"""Given a DataFrame and a MultiIndex object, selects the entries
 	from the data frame matching the multi index. Example:
@@ -201,24 +133,6 @@ def select_by_multiindex(df:pandas.DataFrame, idx:pandas.MultiIndex)->pandas.Dat
 		raise TypeError('`df` or `idx` are of the wrong type.')
 	lvl = df.index.names.difference(idx.names)
 	return df[df.index.droplevel(lvl).isin(idx)]
-
-def project_track_in_z(A:numpy.array, B:numpy.array, z:float):
-	"""Given two points in a (straight) track, A and B, finds the projection
-	at some given z.
-	
-	Arguments:
-	A, B: numpy.array
-		Two points along a track. Can be a collection of points from multiple
-		tracks, in this case the shape has to be (3,whatever...).
-	z: float
-		Value of z on which to project the tracks.
-	"""
-	def dot(a,b):
-		return numpy.sum(a*b, axis=0)
-	if A.shape != B.shape or A.shape[0] != 3:
-		raise ValueError('Either `A` or `B`, or both, is invalid.')
-	track_direction = (A-B)/(numpy.linalg.norm(A-B, axis=0))
-	return A + track_direction*(z-A[2])/dot(track_direction, numpy.tile(numpy.array([0,0,1]), (int(A.size/3),1)).T)
 
 def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, telegram_bot_reporter:SafeTelegramReporter4Loops=None):
 	"""Given a `raw_level_f` function that is intended to operate on a
