@@ -5,7 +5,7 @@ import pandas
 import sqlite3
 import logging
 
-def load_tracks(TB_run:RunBureaucrat, only_multiplicity_one:bool=False):
+def load_tracks(TB_run:RunBureaucrat, only_multiplicity_one:bool=True):
 	"""Loads the tracks reconstructed by `corry_reconstruct_tracks_with_telescope`.
 	
 	Arguments

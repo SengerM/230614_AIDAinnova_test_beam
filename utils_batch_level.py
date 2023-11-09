@@ -3,6 +3,7 @@ from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/Senger
 import numpy
 import pandas
 import utils_run_level
+import utils
 import logging
 
 def load_setup_configuration_info(TB_batch:RunBureaucrat)->pandas.DataFrame:
@@ -220,7 +221,7 @@ def load_hits(TB_batch:RunBureaucrat, DUTs_and_hit_criterions:dict)->pandas.Data
 	hits = hits['has_hit'] # Drop unnecessary level.
 	return hits
 
-def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=False, require_coincidence_with_DUTs:list=None):
+def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=True, trigger_on_DUTs:dict=None)->pandas.DataFrame:
 	"""Loads the tracks reconstructed by `corry_reconstruct_tracks_with_telescope`
 	from all the runs within a TB_batch.
 	
@@ -231,19 +232,51 @@ def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=False, requir
 	only_multiplicity_one: bool, default False
 		If `True`, only tracks whose event has track multiplicity 1 will
 		be loaded.
-	require_coincidence_with_DUTs: list of dict, default None
-		If `None`, this argument is ignored. Else, it has to be a list
-		of dictionaries, each of the form
+	trigger_on_DUTs: list of dict, default None
+		If `None`, this argument is ignored. Else, a dictionary of the form
 		```
 		{
-			'DUT_name': 'AC20',
-			'row': 0,
-			'col': 1,
-			'hit_criterion': "100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<-5e-3",
+			DUT_name_rowcol: conditions,
+		}
+		```
+		where `DUT_name_rowcol` is a string, e.g. `'TI123 (0,1)'` and 
+		`conditions` is an SQL query with the cuts to apply to the different
+		variables available, e.g.:
+		```
+		{
+			'TI123 (0,1)': '`Amplitude (V)` < -5e-3 AND t_50 (s) > 50e-9',
+			'TI222 (1,1)': '`Amplitude (V)` < -10e-3 AND t_50 (s) > 50e-9',
 		}
 		```
 		specifying additional pixels from the DUTs to be required to have
 		a coincidence with the tracks.
+		Each of these DUTs is added as an `or` to the trigger line, i.e.
+		if any of the DUTs in `trigger_on_DUTs` has a hit for some event,
+		then this event is not discarded. If neither of the DUTs in `trigger_on_DUTs`
+		has a hit, then the event is discarded.
+	
+	Returns
+	-------
+	tracks: pandas.DataFrame
+		A data frame of the form
+		```
+		                       is_fitted        chi2  ndof        Ax        Ay     Az        Bx        By    Bz  chi2/ndof
+		n_run n_event n_track                                                                                             
+		42    -1      0                1    7.561065     8 -0.006860  0.000802  0.099 -0.006874  0.000815 -99.0   0.945133
+			   0      0                1  210.956625     8 -0.007270 -0.001034  0.099 -0.007262 -0.001069 -99.0  26.369578
+			   1      0                1    7.138928     8 -0.008476  0.000838  0.099 -0.008475  0.000855 -99.0   0.892366
+			   2      0                1   11.985300     8 -0.008407  0.000644  0.099 -0.008429  0.000664 -99.0   1.498162
+			   3      0                1    3.517900     8 -0.008494 -0.000040  0.099 -0.008526 -0.000042 -99.0   0.439737
+		...                          ...         ...   ...       ...       ...    ...       ...       ...   ...        ...
+		38     11855  0                1    4.209887     8 -0.008299 -0.001134  0.099 -0.008310 -0.001114 -99.0   0.526236
+			   11857  0                1    5.188543     8 -0.008874  0.000089  0.099 -0.008891  0.000105 -99.0   0.648568
+			   11858  0                1    3.497484     8 -0.008743 -0.001127  0.099 -0.008735 -0.001123 -99.0   0.437186
+			   11859  0                1    5.961973     8 -0.006770  0.000023  0.099 -0.006795  0.000027 -99.0   0.745247
+			   11864  0                1   17.142053     8 -0.008584 -0.001071  0.099 -0.008601 -0.001009 -99.0   2.142757
+
+		[351935 rows x 10 columns]
+
+		```
 	"""
 	TB_batch.check_these_tasks_were_run_successfully('runs')
 	
@@ -251,8 +284,8 @@ def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=False, requir
 	
 	tracks = []
 	for run in TB_batch.list_subruns_of_task('runs'):
-		df = utils_run_level.load_tracks_from_run(
-			run = run,
+		df = utils_run_level.load_tracks(
+			TB_run = run,
 			only_multiplicity_one = only_multiplicity_one,
 		)
 		run_number = int(run.run_name.split('_')[0].replace('run',''))
@@ -260,9 +293,12 @@ def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=False, requir
 		tracks.append(df)
 	tracks = pandas.concat(tracks)
 	
-	if require_coincidence_with_DUTs is not None:
-		TB_batch.check_these_tasks_were_run_successfully()
-	
+	if trigger_on_DUTs is not None:
+		hits_on_trigger_DUTs = load_hits(
+			TB_batch = TB_batch,
+			DUTs_and_hit_criterions = trigger_on_DUTs,
+		)
+		tracks = utils.select_by_multiindex(tracks, hits_on_trigger_DUTs.index)
 	return tracks
 
 if __name__ == '__main__':
@@ -277,14 +313,14 @@ if __name__ == '__main__':
 		datefmt = '%H:%M:%S',
 	)
 	
-	hits = load_hits(
+	tracks = load_tracks(
 		TB_batch = RunBureaucrat('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230830_August/batches/subruns/batch_1'),
-		DUTs_and_hit_criterions = {
+		trigger_on_DUTs = {
 			'TI228 (0,0)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)`>50e-9',
 			'TI228 (1,0)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)`>30e-9',
 		},
 	)
-	print(hits)
+	print(tracks)
 
 # ~ def load_tracks(RSD_analysis:RunBureaucrat, DUT_z_position:float, use_DUTs_as_trigger:dict=None):
 	# ~ """
