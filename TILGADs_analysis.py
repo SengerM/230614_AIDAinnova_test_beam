@@ -301,25 +301,17 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat,
 		batch = TI_LGAD_analysis.parent
 		
 		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
+		setup_config = utils_batch_level.load_setup_configuration_info(batch)
 		
-		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
+		tracks = utils_batch_level.load_tracks(TI_LGAD_analysis.parent, only_multiplicity_one=True)
+		tracks = tracks.join(tracks_utils.project_tracks(tracks, z=analysis_config['DUT_z_position']))
 		
-		logging.info('Projecting tracks onto DUT...')
-		projected = project_tracks(tracks, z=analysis_config['DUT_z_position'])
-		tracks = tracks.join(projected)
-		
-		DUT_hits = read_parsed_from_waveforms_from_batch(
-			batch = batch,
-			DUT_name = TI_LGAD_analysis.run_name,
-			variables = [], # No need for variables, only need to know which ones are hits.
-			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}"
+		DUT_hits = utils_batch_level.load_hits(
+			TB_batch = TI_LGAD_analysis.parent,
+			DUTs_and_hit_criterions = {DUT_name_rowcol:hit_criterion for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 		)
-		DUT_hits['DUT_hit'] = True
-		
-		setup_config = utils.load_setup_configuration_info(batch)
-		
-		tracks = tracks.join(DUT_hits['DUT_hit'])
-		tracks['DUT_hit'] = tracks['DUT_hit'].fillna(False)
+		hit_multiplicity = DUT_hits.sum(axis=1)
 		
 		logging.info('Applying transformation to tracks to center and align DUT...')
 		tracks[['Px_transformed','Py_transformed']] = translate_and_then_rotate(
@@ -347,7 +339,7 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat,
 		logging.info(f'Calculating probability that corry fails...')
 		data = []
 		for DUT_ROI_size in numpy.linspace(111e-6,2222e-6,33):
-			tracks_for_which_DUT_has_a_signal = tracks.query('DUT_hit==True')
+			tracks_for_which_DUT_has_a_signal = utils.select_by_multiindex(tracks, hit_multiplicity[hit_multiplicity>0].index)
 			with warnings.catch_warnings():
 				warnings.filterwarnings("ignore")
 				# The previous is to get rid of the annoying warning "A value is trying to be set on a copy of a slice from a DataFrame."
@@ -459,7 +451,7 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat,
 			error_y = 'probability_corry_fails error',
 			markers = True,
 			labels = {
-				'probability_corry_fails': 'Probability that corry fails',
+				'probability_corry_fails': 'Reconstruction fail probability',
 				'DUT_ROI_size (m)': 'DUT ROI size (m)',
 			},
 		)
