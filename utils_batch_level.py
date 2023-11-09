@@ -157,6 +157,69 @@ def load_parsed_from_waveforms(TB_batch:RunBureaucrat, load_this:dict, variables
 	parsed_from_waveforms.set_index('DUT_name_rowcol', append=True, inplace=True)
 	return parsed_from_waveforms
 
+def load_hits(TB_batch:RunBureaucrat, DUTs_and_hit_criterions:dict)->pandas.DataFrame:
+	"""Load the hits on a set of DUTs according to some criterions.
+	
+	Arguments
+	---------
+	TB_batch: RunBureaucrat
+		A bureaucrat pointing to the batch from which to load the data.
+	DUTs_and_hit_criterions: dict
+		A dictionary of the form
+		```
+		{
+			DUT_name_rowcol: conditions,
+		}
+		```
+		where `DUT_name_rowcol` is a string, e.g. `'TI123 (0,1)'` and 
+		`conditions` is an SQL query with the cuts to apply to the different
+		variables available, which define what is considered as a hit, e.g.:
+		```
+		{
+			'TI123 (0,1)': '`Amplitude (V)` < -5e-3 AND t_50 (s) > 50e-9',
+			'TI222 (1,1)': '`Amplitude (V)` < -10e-3 AND t_50 (s) > 50e-9',
+		}
+		```
+	
+	Returns
+	-------
+	hits: pandas.DataFrame
+		A data frame of the form
+		```
+		DUT_name_rowcol  TI228 (0,0)  TI228 (1,0)
+		n_run n_event                            
+		38    9                 True        False
+			  52                True        False
+			  134               True        False
+			  158              False         True
+			  290              False         True
+		...                      ...          ...
+		44    127353            True        False
+			  127380           False         True
+			  127390            True        False
+			  127394            True        False
+			  127402            True        False
+
+		[17339 rows x 2 columns]
+		```
+		where `True` or `False` denote whether there was a hit or not,
+		according to the criterion specified in `DUTs_and_hit_criterions`
+		for each DUT.
+	"""
+	TB_batch.check_these_tasks_were_run_successfully('runs')
+	
+	logging.info(f'Loading hits from {TB_batch.pseudopath} for {sorted(DUTs_and_hit_criterions)}...')
+	
+	hits = load_parsed_from_waveforms(
+		TB_batch = TB_batch,
+		load_this = DUTs_and_hit_criterions,
+		variables = None, # We don't need no variables.
+	)
+	hits['has_hit'] = True
+	hits = hits.unstack('DUT_name_rowcol', fill_value=False)
+	hits = hits['has_hit'] # Drop unnecessary level.
+	return hits
+
 def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=False, require_coincidence_with_DUTs:list=None):
 	"""Loads the tracks reconstructed by `corry_reconstruct_tracks_with_telescope`
 	from all the runs within a TB_batch.
@@ -214,16 +277,14 @@ if __name__ == '__main__':
 		datefmt = '%H:%M:%S',
 	)
 	
-	parsed = load_parsed_from_waveforms(
+	hits = load_hits(
 		TB_batch = RunBureaucrat('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230830_August/batches/subruns/batch_1'),
-		load_this = {
+		DUTs_and_hit_criterions = {
 			'TI228 (0,0)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)`>50e-9',
 			'TI228 (1,0)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)`>30e-9',
 		},
-		variables = ['Amplitude (V)','Collected charge (V s)'],
 	)
-	print(parsed)
-	print(parsed['Amplitude (V)'].max())
+	print(hits)
 
 # ~ def load_tracks(RSD_analysis:RunBureaucrat, DUT_z_position:float, use_DUTs_as_trigger:dict=None):
 	# ~ """
