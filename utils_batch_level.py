@@ -6,6 +6,74 @@ import utils_run_level
 import utils
 import logging
 
+def setup_batch_info(TB_batch:RunBureaucrat):
+	"""Add some batch-wise information needed for the analysis, like
+	for example a link to the setup connection spreadsheet."""
+	def setup_batch_info_June_test_beam(TB_batch:RunBureaucrat):
+		TB_batch.check_these_tasks_were_run_successfully('runs') # So we are sure this is pointing to a batch
+		
+		n_batch = int(TB_batch.run_name.split('_')[1])
+		if n_batch in {2,3,4}:
+			path_to_setup_connection_ods = Path('/media/msenger/230829_gray/AIDAinnova_test_beams/raw_data/230614_June/AIDAInnova_June/setup_connections')/f'Batch{n_batch}.ods'
+		elif n_batch in {5,6}:
+			path_to_setup_connection_ods = Path('/media/msenger/230829_gray/AIDAinnova_test_beams/raw_data/230614_June/CMS-ETL_June/setup_connections')/f'setup_connections_Batch{n_batch}.ods'
+		else:
+			raise RuntimeError(f'Cannot determine batch name appropriately!')
+		
+		with TB_batch.handle_task('batch_info') as employee:
+			for sheet_name in {'planes','signals'}:
+				df = pandas.read_excel(
+					path_to_setup_connection_ods,
+					sheet_name = sheet_name,
+				).set_index('plane_number')
+				utils.save_dataframe(
+					df,
+					name = sheet_name,
+					location = employee.path_to_directory_of_my_task,
+				)
+	
+	def setup_batch_info_August_test_beam(TB_batch:RunBureaucrat):
+		TB_batch.check_these_tasks_were_run_successfully('runs') # So we are sure this is pointing to a batch
+		
+		with TB_batch.handle_task('batch_info') as employee:
+			n_batch = int(TB_batch.run_name.split('_')[1])
+			planes_definition = pandas.read_csv(
+				'https://docs.google.com/spreadsheets/d/e/2PACX-1vTuRXCnGCPu8nuTrrh_6M_QaBYwVQZfmLX7cr6OlM-ucf9yx3KIbBN4XBQxc0fTp-O26Y2QIOCkgP98/pub?gid=0&single=true&output=csv',
+				dtype = dict(
+					batch_number = int,
+					plane_number = int,
+					DUT_name = str,
+					orientation = str,
+					high_voltage_source = str,
+					low_voltage_source = str,
+				),
+				index_col = ['batch_number','plane_number'],
+			)
+			pixels_definition = pandas.read_csv(
+				'https://docs.google.com/spreadsheets/d/e/2PACX-1vTuRXCnGCPu8nuTrrh_6M_QaBYwVQZfmLX7cr6OlM-ucf9yx3KIbBN4XBQxc0fTp-O26Y2QIOCkgP98/pub?gid=1673457618&single=true&output=csv',
+				dtype = dict(
+					batch_number = int,
+					plane_number = int,
+					chubut_channel_number = int,
+					digitizer_name = str,
+					digitizer_channel_name = str,
+					row = int,
+					col = int,
+				),
+				index_col = ['batch_number','plane_number'],
+			)
+			for name,df in {'planes_definition':planes_definition, 'pixels_definition':pixels_definition}.items():
+				utils.save_dataframe(df.query(f'batch_number=={n_batch}'), name, employee.path_to_directory_of_my_task)
+	
+	match TB_batch.parent.run_name: # The parent of the batch should be the TB campaign.
+		case '230614_June':
+			setup_batch_info_June_test_beam(TB_batch)
+		case '230830_August':
+			setup_batch_info_August_test_beam(TB_batch)
+		case _:
+			raise RuntimeError(f'Cannot determine which test beam campaign {TB_batch.pseudopath} belongs to...')
+	logging.info(f'Setup info was set for {TB_batch.pseudopath} ✅')
+
 def load_setup_configuration_info(TB_batch:RunBureaucrat)->pandas.DataFrame:
 	TB_batch.check_these_tasks_were_run_successfully(['runs','batch_info'])
 	if not all([b.was_task_run_successfully('parse_waveforms') for b in TB_batch.list_subruns_of_task('runs')]):
