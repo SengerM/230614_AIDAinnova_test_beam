@@ -2,6 +2,7 @@ from pathlib import Path
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 import utils
 import utils_batch_level
+import tracks_utils
 import logging
 import pandas
 import sqlite3
@@ -108,100 +109,52 @@ def plot_DUT_distributions(TI_LGAD_analysis:RunBureaucrat, force:bool=False, max
 				include_plotlyjs = 'cdn',
 			)
 
-def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, do_3D_plot:bool=True, force:bool=False):
+def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
 	
 	if force==False and TI_LGAD_analysis.was_task_run_successfully('plot_tracks_and_hits'):
 		return
 	
 	with TI_LGAD_analysis.handle_task('plot_tracks_and_hits') as employee:
-		batch = TI_LGAD_analysis.parent
-		
 		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
+		setup_config = utils_batch_level.load_setup_configuration_info(TI_LGAD_analysis.parent)
 		
-		tracks = load_tracks_from_batch(batch, only_multiplicity_one=True)
+		tracks = utils_batch_level.load_tracks(TI_LGAD_analysis.parent, only_multiplicity_one=True)
+		tracks = tracks.join(tracks_utils.project_tracks(tracks, z=analysis_config['DUT_z_position']))
 		
-		logging.info('Projecting tracks onto DUT...')
-		projected = utils.project_track_in_z(
-			A = tracks[[f'A{_}' for _ in ['x','y','z']]].to_numpy().T,
-			B = tracks[[f'B{_}' for _ in ['x','y','z']]].to_numpy().T,
-			z = analysis_config['DUT_z_position'],
-		).T
-		projected = pandas.DataFrame(
-			projected,
-			columns = ['Px','Py','Pz'],
-			index = tracks.index,
-		)
-		tracks = tracks.join(projected)
-		
-		DUT_hits = read_parsed_from_waveforms_from_batch(
-			batch = batch,
-			DUT_name = TI_LGAD_analysis.run_name,
-			variables = [], # No need for variables, only need to know which ones are hits.
-			additional_SQL_selection = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}"
+		DUT_hits = utils_batch_level.load_hits(
+			TB_batch = TI_LGAD_analysis.parent,
+			DUTs_and_hit_criterions = {DUT_name_rowcol:hit_criterion for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 		)
 		
-		setup_config = utils.load_setup_configuration_info(batch)
-		
-		DUT_hits = DUT_hits.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
-		
+		DUT_hits.columns = pandas.MultiIndex.from_product([['has_hit'], DUT_hits.columns])
+		DUT_hits = DUT_hits.stack('DUT_name_rowcol')
+		DUT_hits = DUT_hits.reset_index('DUT_name_rowcol', drop=False)
+		DUT_hits = DUT_hits.query('has_hit==True') # Keep only rows where there is a hit.
 		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
 		
 		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
 		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
 		
-		logging.info('Plotting tracks and hits on DUT...')
+		logging.info('Plotting tracks and hits...')
 		fig = px.scatter(
 			tracks.reset_index(),
-			title = f'Tracks projected on the DUT<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
+			title = f'Tracks and hits projected on the DUT<br><sup>{TI_LGAD_analysis.pseudopath}, amplitude < {analysis_config["Amplitude threshold (V)"]*1e3:.1f} mV</sup>',
 			x = 'Px',
 			y = 'Py',
 			color = 'DUT_name_rowcol',
 			hover_data = ['n_run','n_event'],
-			labels = {
-				'Px': 'x (m)',
-				'Py': 'y (m)',
-			},
+			labels = utils.PLOTS_LABELS,
 		)
 		fig.update_yaxes(
 			scaleanchor = "x",
 			scaleratio = 1,
 		)
 		fig.write_html(
-			employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
+			employee.path_to_directory_of_my_task/'tracks_and_hits.html',
 			include_plotlyjs = 'cdn',
 		)
-		
-		if do_3D_plot:
-			logging.info('Doing 3D tracks plot...')
-			tracks_for_plotly = []
-			for AB in ['A','B']:
-				_ = tracks[[f'{AB}{coord}' for coord in ['x','y','z']]]
-				_.columns = ['x','y','z']
-				tracks_for_plotly.append(_)
-			tracks_for_plotly = pandas.concat(tracks_for_plotly)
-			tracks_for_plotly = tracks_for_plotly.join(tracks['DUT_name_rowcol'])
-			
-			fig = px.line_3d(
-				tracks_for_plotly.reset_index(drop=False).query('DUT_name_rowcol != "no hit"'),
-				title = f'Tracks<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
-				x = 'x',
-				y = 'y',
-				z = 'z',
-				color = 'DUT_name_rowcol',
-				line_group = 'n_event',
-				labels = {
-					'x': 'x (m)',
-					'y': 'y (m)',
-					'z': 'z (m)',
-				},
-			)
-			fig.update_layout(hovermode=False)
-			# ~ fig.layout.scene.camera.projection.type = "orthographic"
-			fig.write_html(
-				employee.path_to_directory_of_my_task/f'tracks_3D.html',
-				include_plotlyjs = 'cdn',
-			)
 
 def plot_cluster_size(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
@@ -1438,13 +1391,6 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
-		'--enable_3D_tracks_plot',
-		help = 'Pass this flag to enable the 3D plot with the tracks, which can take longer to execute.',
-		required = False,
-		dest = 'enable_3D_tracks_plot',
-		action = 'store_true'
-	)
-	parser.add_argument(
 		'--force',
 		help = 'If this flag is passed, it will force whatever has to be done, meaning old data will be deleted.',
 		required = False,
@@ -1466,7 +1412,7 @@ if __name__ == '__main__':
 		if args.plot_DUT_distributions == True:
 			plot_DUT_distributions(bureaucrat, force=args.force)
 		if args.plot_tracks_and_hits == True:
-			plot_tracks_and_hits(bureaucrat, do_3D_plot=args.enable_3D_tracks_plot, force=args.force)
+			plot_tracks_and_hits(bureaucrat, force=args.force)
 		if args.transformation_for_centering_and_leveling == True:
 			transformation_for_centering_and_leveling(bureaucrat, draw_square=True, force=args.force)
 		if args.efficiency_vs_distance_calculation == True:
