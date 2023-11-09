@@ -165,14 +165,15 @@ def plot_cluster_size(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	
 	with TI_LGAD_analysis.handle_task(TASK_NAME) as employee:
 		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
+		setup_config = utils_batch_level.load_setup_configuration_info(TI_LGAD_analysis.parent)
 		
-		tracks = load_tracks(
-			TI_LGAD_analysis = TI_LGAD_analysis,
-			DUT_z_position = analysis_config['DUT_z_position'],
-		)
-		hits = load_hits(
-			TI_LGAD_analysis = TI_LGAD_analysis,
-			DUT_hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}",
+		tracks = utils_batch_level.load_tracks(TI_LGAD_analysis.parent, only_multiplicity_one=True)
+		tracks = tracks.join(tracks_utils.project_tracks(tracks, z=analysis_config['DUT_z_position']))
+		
+		hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}"
+		hits = utils_batch_level.load_hits(
+			TB_batch = TI_LGAD_analysis.parent,
+			DUTs_and_hit_criterions = {DUT_name_rowcol:hit_criterion for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 		)
 		
 		cluster_size = hits.sum(axis=1)
@@ -184,7 +185,7 @@ def plot_cluster_size(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 		
 		fig = px.scatter(
 			data_frame = tracks.reset_index().sort_values('cluster_size').astype({'cluster_size':str}),
-			title = f'Cluster size<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
+			title = f'Cluster size<br><sup>{TI_LGAD_analysis.pseudopath}, amplitude < {analysis_config["Amplitude threshold (V)"]*1e3:.1f} mV</sup>',
 			x = 'Px',
 			y = 'Py',
 			color = 'cluster_size',
@@ -206,7 +207,7 @@ def plot_cluster_size(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 		fig = px.histogram(
 			tracks,
 			x =  'cluster_size',
-			title = f'Cluster size<br><sup>{TI_LGAD_analysis.pseudopath}</sup>',
+			title = f'Cluster size<br><sup>{TI_LGAD_analysis.pseudopath}, amplitude < {analysis_config["Amplitude threshold (V)"]*1e3:.1f} mV</sup>',
 			text_auto = True,
 		)
 		fig.update_yaxes(type="log")
