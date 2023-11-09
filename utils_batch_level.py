@@ -194,7 +194,7 @@ def load_parsed_from_waveforms(TB_batch:RunBureaucrat, load_this:dict, variables
 	"""
 	TB_batch.check_these_tasks_were_run_successfully('runs')
 	
-	logging.info(f'Loading parsed from waveforms for {TB_batch.pseudopath} for {sorted(load_this)}...')
+	logging.info(f'Loading {variables} for {TB_batch.pseudopath} for {sorted(load_this)}...')
 	
 	setup_config = load_setup_configuration_info(TB_batch)
 	

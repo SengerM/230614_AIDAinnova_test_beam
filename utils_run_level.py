@@ -44,7 +44,7 @@ def load_tracks(TB_run:RunBureaucrat, only_multiplicity_one:bool=True):
 def load_parsed_from_waveforms(TB_run:RunBureaucrat, where:str, variables:list=None):
 	TB_run.check_these_tasks_were_run_successfully(['raw','parse_waveforms'])
 	
-	logging.info(f'Reading parsed from waveforms from run {TB_run.pseudopath}...')
+	logging.info(f'Reading {variables} from {TB_run.pseudopath}...')
 	
 	if variables is not None:
 		variables = ',' + ','.join([f'`{_}`' for _ in variables])
