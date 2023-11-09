@@ -128,13 +128,7 @@ def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 			DUTs_and_hit_criterions = {DUT_name_rowcol:hit_criterion for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 		)
 		
-		DUT_hits.columns = pandas.MultiIndex.from_product([['has_hit'], DUT_hits.columns])
-		DUT_hits = DUT_hits.stack('DUT_name_rowcol')
-		DUT_hits = DUT_hits.reset_index('DUT_name_rowcol', drop=False)
-		DUT_hits = DUT_hits.query('has_hit==True') # Keep only rows where there is a hit.
-		tracks = tracks.join(DUT_hits['DUT_name_rowcol'])
-		
-		tracks['DUT_name_rowcol'] = tracks['DUT_name_rowcol'].fillna('no hit')
+		tracks = tracks_utils.tag_tracks_with_DUT_hits(tracks, DUT_hits)
 		tracks = tracks.sort_values('DUT_name_rowcol', ascending=False)
 		
 		logging.info('Plotting tracks and hits...')
