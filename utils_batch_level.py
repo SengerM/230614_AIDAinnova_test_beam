@@ -208,7 +208,10 @@ def load_parsed_from_waveforms(TB_batch:RunBureaucrat, load_this:dict, variables
 		setup_config_this_DUT = setup_config_this_DUT.iloc[0] # Convert to Series
 		CAEN_n_channel = setup_config_this_DUT['CAEN_n_channel']
 		n_CAEN = setup_config_this_DUT['n_CAEN']
-		SQL_query_where.append(f'n_CAEN=={n_CAEN} AND CAEN_n_channel=={CAEN_n_channel} AND ({this_DUT_SQL_query})')
+		_ = f'n_CAEN=={n_CAEN} AND CAEN_n_channel=={CAEN_n_channel}'
+		if this_DUT_SQL_query is not None:
+			_ += f' AND ({this_DUT_SQL_query})'
+		SQL_query_where.append(_)
 	SQL_query_where = ') or ('.join(SQL_query_where)
 	SQL_query_where = f'({SQL_query_where})'
 	
@@ -381,14 +384,16 @@ if __name__ == '__main__':
 		datefmt = '%H:%M:%S',
 	)
 	
-	tracks = load_tracks(
+	data = load_parsed_from_waveforms(
 		TB_batch = RunBureaucrat('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230830_August/batches/subruns/batch_1'),
-		trigger_on_DUTs = {
-			'TI228 (0,0)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)`>50e-9',
-			'TI228 (1,0)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)`>30e-9',
+		load_this = {
+			'TI228 (0,0)': '`Amplitude (V)` < -.005',
+			'TI228 (1,0)': '`Amplitude (V)` > .01',
 		},
+		variables = ['Amplitude (V)']
 	)
-	print(tracks)
+	print(data.groupby('DUT_name_rowcol').agg(['max','min','count']))
+
 
 # ~ def load_tracks(RSD_analysis:RunBureaucrat, DUT_z_position:float, use_DUTs_as_trigger:dict=None):
 	# ~ """
