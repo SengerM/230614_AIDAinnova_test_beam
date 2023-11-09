@@ -98,6 +98,30 @@ def load_parsed_from_waveforms(TB_batch:RunBureaucrat, load_this:dict, variables
 		```
 	variables: list of str
 		A list of the variables to be loaded, e.g. `['Amplitude (V)','Collected charge (V s)']`.
+	
+	Returns
+	-------
+	parsed_from_waveforms: pandas.DataFrame
+		A data frame of the form
+		```
+		                               Amplitude (V)  Collected charge (V s)
+		n_run n_event DUT_name_rowcol                                       
+		42    38      TI228 (0,0)          -0.005629           -4.103537e-12
+			  49      TI228 (1,0)          -0.005816           -2.829203e-12
+			  53      TI228 (1,0)          -0.070297           -1.066991e-10
+			  66      TI228 (1,0)          -0.074181           -1.142252e-10
+			  88      TI228 (0,0)          -0.005203           -2.491007e-12
+		...                                      ...                     ...
+		38    11695   TI228 (0,0)          -0.005421           -4.191143e-12
+			  11697   TI228 (0,0)          -0.101138           -1.509368e-10
+			  11703   TI228 (1,0)          -0.088648           -1.263468e-10
+			  11732   TI228 (0,0)          -0.005097           -4.018176e-12
+			  11782   TI228 (0,0)          -0.005678           -3.041788e-12
+
+		[17854 rows x 2 columns]
+
+		```
+		
 	"""
 	TB_batch.check_these_tasks_were_run_successfully('runs')
 	
@@ -127,7 +151,11 @@ def load_parsed_from_waveforms(TB_batch:RunBureaucrat, load_this:dict, variables
 			where = SQL_query_where,
 			variables = variables,
 		)
-	return pandas.concat(parsed_from_waveforms)
+	parsed_from_waveforms = pandas.concat(parsed_from_waveforms, names=['n_run'])
+	parsed_from_waveforms = parsed_from_waveforms.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'], on=['n_CAEN','CAEN_n_channel'])
+	parsed_from_waveforms.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
+	parsed_from_waveforms.set_index('DUT_name_rowcol', append=True, inplace=True)
+	return parsed_from_waveforms
 
 def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=False, require_coincidence_with_DUTs:list=None):
 	"""Loads the tracks reconstructed by `corry_reconstruct_tracks_with_telescope`
@@ -192,7 +220,7 @@ if __name__ == '__main__':
 			'TI228 (0,0)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)`>50e-9',
 			'TI228 (1,0)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)`>30e-9',
 		},
-		variables = ['Amplitude (V)'],
+		variables = ['Amplitude (V)','Collected charge (V s)'],
 	)
 	print(parsed)
 	print(parsed['Amplitude (V)'].max())
