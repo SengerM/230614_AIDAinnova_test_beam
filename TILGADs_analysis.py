@@ -643,6 +643,16 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 				continue
 			which_pixels_analysis = employee.create_subrun(which_pixels)
 			with which_pixels_analysis.handle_task('efficiency_vs_distance') as which_pixels_employee:
+				with open(which_pixels_employee.path_to_directory_of_my_task/'analysis_parameters.json', 'w') as ofile:
+					json.dump(
+						{
+							'use_estimation_of_misreconstructed_tracks': use_estimation_of_misreconstructed_tracks,
+							'trigger_on_DUTs': trigger_on_DUTs,
+						},
+						ofile,
+						indent = '\t',
+					)
+				
 				logging.info(f'Calculating efficiency with {which_pixels_analysis.pseudopath}...')
 				xmin = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_min']
 				xmax = PIXEL_DEPENDENT_SETTINGS[which_pixels]['ROI']['x_max']
