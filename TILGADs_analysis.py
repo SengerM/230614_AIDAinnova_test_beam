@@ -832,7 +832,61 @@ def calculate_interpixel_distance(efficiency_data:pandas.DataFrame, IPD_window:f
 	IPD_error_up = IPD_largest - IPD
 	IPD_error_down = IPD - IPD_smallest
 	
-	return IPD, IPD_error_up, IPD_error_down
+	return IPD, IPD_error_up, IPD_error_down, interpolated['right']['val'](measure_at_efficiency), interpolated['left']['val'](measure_at_efficiency), measure_at_efficiency
+
+def interpixel_distance_from_efficiency_vs_distance(efficiency_vs_distance_analysis:RunBureaucrat):
+	efficiency_vs_distance_analysis.check_these_tasks_were_run_successfully('efficiency_vs_distance')
+	
+	with efficiency_vs_distance_analysis.handle_task('inter_pixel_distance') as employee:
+		efficiency_data = pandas.read_pickle(efficiency_vs_distance_analysis.path_to_directory_of_task('efficiency_vs_distance')/'efficiency_vs_distance.pickle')
+		
+		IPD, IPD_error_up, IPD_error_down, IPD_measured_at_left, IPD_measured_at_right, measured_at_efficiency = calculate_interpixel_distance(
+			efficiency_data = efficiency_data,
+			measure_at_efficiency = .5,
+		)
+		utils.save_dataframe(
+			pandas.Series(
+				{
+					'IPD (m)': IPD, 
+					'IPD (m) error +': IPD_error_up,
+					'IPD (m) error -': IPD_error_down,
+				}
+			),
+			name = 'result',
+			location = employee.path_to_directory_of_my_task,
+		)
+		
+		fig = plotly_utils.line(
+			data_frame = efficiency_data.sort_index().reset_index(drop=False),
+			title = f'Inter-pixel distance calculation<br><sup>{efficiency_vs_distance_analysis.pseudopath}</sup>',
+			x = 'Distance (m)',
+			y = 'Efficiency',
+			error_y = 'Efficiency error_+',
+			error_y_minus = 'Efficiency error_-',
+			color = 'Pixel',
+			error_y_mode = 'bands',
+		)
+		arrow = go.layout.Annotation(
+			dict(
+				x = IPD_measured_at_left,
+				y = measured_at_efficiency,
+				ax = IPD_measured_at_right,
+				ay = measured_at_efficiency,
+				xref = "x", 
+				yref = "y",
+				text = "",
+				showarrow = True,
+				axref = "x", 
+				ayref = 'y',
+				arrowhead = 3,
+				arrowwidth = 1.5,
+			)
+		)
+		fig.update_layout(annotations=[arrow])
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'IPD_measurement.html',
+			include_plotlyjs = 'cdn',
+		)
 
 def interpixel_distance(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','efficiency_vs_distance_calculation'])
@@ -843,27 +897,12 @@ def interpixel_distance(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	with TI_LGAD_analysis.handle_task('interpixel_distance') as employee:
 		logging.info(f'Calculating IPD of {TI_LGAD_analysis.pseudopath}...')
 		efficiency_data = []
-		for efficiency_analysis in TI_LGAD_analysis.list_subruns_of_task('efficiency_vs_distance_calculation'):
-			efficiency_analysis.check_these_tasks_were_run_successfully('efficiency_vs_distance') # This should always be the case, but just to be sure...
-			_ = pandas.read_pickle(efficiency_analysis.path_to_directory_of_task('efficiency_vs_distance')/'efficiency_vs_distance.pickle')
-			_ = pandas.concat({efficiency_analysis.run_name: _}, names=['pixel_group'])
-			efficiency_data.append(_)
-		efficiency_data = pandas.concat(efficiency_data)
-		
 		IPD = []
-		for pixel_group, data in efficiency_data.groupby('pixel_group'):
-			_IPD, IPD_error_up, IPD_error_down = calculate_interpixel_distance(
-				efficiency_data = data, 
-				measure_at_efficiency = .5,
-			)
-			IPD.append(
-				{
-					'pixel_group': pixel_group,
-					'IPD (m)': _IPD,
-					'IPD (m) error -': IPD_error_down,
-					'IPD (m) error +': IPD_error_up,
-				}
-			)
+		for efficiency_analysis in TI_LGAD_analysis.list_subruns_of_task('efficiency_vs_distance_calculation'):
+			interpixel_distance_from_efficiency_vs_distance(efficiency_analysis)
+			_ = pandas.read_pickle(efficiency_analysis.path_to_directory_of_task('inter_pixel_distance')/'result.pickle')
+			_['pixel_group'] = efficiency_analysis.run_name
+
 		IPD = pandas.DataFrame.from_records(IPD).set_index('pixel_group')
 		
 		IPD_final_value = numpy.mean([ufloat(row['IPD (m)'], max(row['IPD (m) error -'],row['IPD (m) error +'])) for idx,row in IPD.iterrows()])
