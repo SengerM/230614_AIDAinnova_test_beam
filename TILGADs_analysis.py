@@ -512,7 +512,7 @@ def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, 
 	
 	return error_down, error_up
 
-def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estimation_of_misreconstructed_tracks:bool=True, force:bool=False):
+def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estimation_of_misreconstructed_tracks:bool, trigger_on_DUTs=None, force:bool=False):
 	THIS_FUNCTION_PLOTS_LABELS = {
 		'pixel_hit': 'Pixel hit',
 	}
@@ -528,7 +528,11 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 		
 		setup_config = utils_batch_level.load_setup_configuration_info(TI_LGAD_analysis.parent)
 		
-		tracks = utils_batch_level.load_tracks(TI_LGAD_analysis.parent, only_multiplicity_one=True)
+		tracks = utils_batch_level.load_tracks(
+			TI_LGAD_analysis.parent, 
+			only_multiplicity_one = True,
+			trigger_on_DUTs = trigger_on_DUTs,
+		)
 		tracks = tracks.join(tracks_utils.project_tracks(tracks, z=analysis_config['DUT_z_position']))
 		
 		hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}"
