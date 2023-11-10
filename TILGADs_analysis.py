@@ -938,7 +938,7 @@ if __name__ == '__main__':
 			help = 'Path to the base measurement directory.',
 			required = True,
 			dest = 'directory',
-			type = str,
+			type = Path,
 		)
 		parser.add_argument('--setup_analysis_for_DUT',
 			metavar = 'DUT_name', 
@@ -975,6 +975,13 @@ if __name__ == '__main__':
 			required = False,
 			dest = 'efficiency_vs_distance_calculation',
 			action = 'store_true'
+		)
+		parser.add_argument(
+			'--efficiency_vs_distance_calculation_settings',
+			help = 'If "--efficiency_vs_distance_calculation" is given, this argument provides a path to a json file with the configuration for the efficiency calculation. If not provided, the default settings are used.',
+			required = False,
+			dest = 'efficiency_vs_distance_calculation_settings',
+			type = Path,
 		)
 		parser.add_argument(
 			'--estimate_fraction_of_misreconstructed_tracks',
@@ -1023,10 +1030,18 @@ if __name__ == '__main__':
 		if args.transformation_for_centering_and_leveling == True:
 			transformation_for_centering_and_leveling(bureaucrat, draw_square=True, force=args.force)
 		if args.efficiency_vs_distance_calculation == True:
-			efficiency_vs_distance_calculation(
-				TI_LGAD_analysis = bureaucrat,
-				use_estimation_of_misreconstructed_tracks = True,
-			)
+			if args.efficiency_vs_distance_calculation_settings is not None:
+				with open(args.efficiency_vs_distance_calculation_settings, 'r') as ifile:
+					_analysis_settings = json.load(ifile)
+				efficiency_vs_distance_calculation(
+					TI_LGAD_analysis = bureaucrat,
+					**_analysis_settings,
+				)
+			else: # Default settings
+				efficiency_vs_distance_calculation(
+					TI_LGAD_analysis = bureaucrat,
+					use_estimation_of_misreconstructed_tracks = True,
+				)
 		if args.estimate_fraction_of_misreconstructed_tracks == True:
 			estimate_fraction_of_misreconstructed_tracks(bureaucrat, force=args.force)
 		if args.interpixel_distance == True:
