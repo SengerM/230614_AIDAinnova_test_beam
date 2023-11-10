@@ -302,6 +302,11 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 			include_plotlyjs = 'cdn',
 		)
 
+def get_transformation_parameters(analysis:RunBureaucrat):
+	analysis.check_these_tasks_were_run_successfully('transformation_for_centering_and_leveling')
+	with open(analysis.path_to_directory_of_task('transformation_for_centering_and_leveling')/'transformation_parameters.json', 'r') as ifile:
+		return json.load(ifile)
+
 def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
 	
@@ -325,11 +330,12 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat,
 		hit_multiplicity = DUT_hits.sum(axis=1)
 		
 		logging.info('Applying transformation to tracks to center and align DUT...')
+		transformation_parameters = get_transformation_parameters(analysis)
 		tracks[['Px_transformed','Py_transformed']] = translate_and_then_rotate(
 			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
-			x_translation = analysis_config['x_translation'],
-			y_translation = analysis_config['y_translation'],
-			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+			x_translation = transformation_parameters['x_translation'],
+			y_translation = transformation_parameters['y_translation'],
+			angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi,
 		)
 		
 		# To estimate the total area, I use the tracks data before the transformation (rotation and translation) in which the total area should be a rectangle aligned with x and y, and then apply the transformation wherever needed.
@@ -342,9 +348,9 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat,
 		).set_index('which_corner')
 		total_area_corners[['x_transformed','y_transformed']] = translate_and_then_rotate(
 			points = total_area_corners,
-			x_translation = analysis_config['x_translation'],
-			y_translation = analysis_config['y_translation'],
-			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi/4,
+			x_translation = transformation_parameters['x_translation'],
+			y_translation = transformation_parameters['y_translation'],
+			angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi/4,
 		)
 		
 		logging.info(f'Calculating probability that corry fails...')
@@ -552,6 +558,8 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 			DUTs_and_hit_criterions = {DUT_name_rowcol:hit_criterion for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 		)
 		
+		transformation_parameters = get_transformation_parameters(analysis)
+		
 		if use_estimation_of_misreconstructed_tracks:
 			TI_LGAD_analysis.check_these_tasks_were_run_successfully('estimate_fraction_of_misreconstructed_tracks')
 			probability_corry_fails = pandas.read_pickle(TI_LGAD_analysis.path_to_directory_of_task('estimate_fraction_of_misreconstructed_tracks')/'probability_that_corry_fails.pickle')
@@ -567,9 +575,9 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 			).set_index('which_corner')
 			total_area_corners[['x_transformed','y_transformed']] = translate_and_then_rotate(
 				points = total_area_corners,
-				x_translation = analysis_config['x_translation'],
-				y_translation = analysis_config['y_translation'],
-				angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi/4,
+				x_translation = transformation_parameters['x_translation'],
+				y_translation = transformation_parameters['y_translation'],
+				angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi/4,
 			)
 			total_area = (total_area_corners.loc['bottom_right','x']-total_area_corners.loc['bottom_left','x'])*(total_area_corners.loc['top_left','y']-total_area_corners.loc['bottom_left','y'])
 			
@@ -582,9 +590,9 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 		logging.info('Applying transformation to tracks to center and align DUT...')
 		tracks[['Px','Py']] = translate_and_then_rotate(
 			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
-			x_translation = analysis_config['x_translation'],
-			y_translation = analysis_config['y_translation'],
-			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+			x_translation = transformation_parameters['x_translation'],
+			y_translation = transformation_parameters['y_translation'],
+			angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi,
 		)
 		
 		tracks = tracks[['Px','Py']] # Keep only stuff that will be used.
@@ -959,7 +967,7 @@ def interpixel_distance(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 		)
 
 def efficiency_increasing_centered_ROI(analysis:RunBureaucrat, force:bool=False):
-	analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
+	analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','transformation_for_centering_and_leveling'])
 	LOCAL_PLOT_LABELS = {'hit_in_DUT': 'Hit in DUT'}
 	TASK_NAME = 'efficiency_increasing_centered_ROI'
 	
@@ -972,6 +980,12 @@ def efficiency_increasing_centered_ROI(analysis:RunBureaucrat, force:bool=False)
 			raise RuntimeError(f'Cannot find analysis config file for {analysis.pseudopath}. You have to create a json file named {path_to_analysis_config_file.name} in the run directory of {analysis.pseudopath}. ')
 		with open(path_to_analysis_config_file, 'r') as ifile:
 			analysis_config = json.load(ifile)
+		with open(employee.path_to_run_directory/path_to_analysis_config_file.name, 'w') as ofile:
+			json.dump(
+				analysis_config,
+				ofile,
+				indent = '\t',
+			)
 		
 		setup_config = utils_batch_level.load_setup_configuration_info(analysis.parent)
 		
@@ -1020,11 +1034,13 @@ def efficiency_increasing_centered_ROI(analysis:RunBureaucrat, force:bool=False)
 			number_of_noHitTrack_that_are_fake_per_unit_area = ufloat(0,0)
 		
 		logging.info('Applying transformation to tracks to center and align DUT...')
+		
+		transformation_parameters = get_transformation_parameters(analysis)
 		tracks[['Px','Py']] = translate_and_then_rotate(
 			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
-			x_translation = analysis_config['x_translation'],
-			y_translation = analysis_config['y_translation'],
-			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
+			x_translation = transformation_parameters['x_translation'],
+			y_translation = transformation_parameters['y_translation'],
+			angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi,
 		)
 		
 		tracks = tracks[['Px','Py']] # Keep only stuff that will be used.
@@ -1107,7 +1123,6 @@ def efficiency_increasing_centered_ROI(analysis:RunBureaucrat, force:bool=False)
 			employee.path_to_directory_of_my_task/'efficiency_vs_ROI_size.html',
 			include_plotlyjs = 'cdn',
 		)
-		a
 
 def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	plot_DUT_distributions(TI_LGAD_analysis, force=force)
