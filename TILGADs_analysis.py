@@ -512,7 +512,7 @@ def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, 
 	
 	return error_down, error_up
 
-def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estimation_of_misreconstructed_tracks:bool, trigger_on_DUTs=None, force:bool=False):
+def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estimation_of_misreconstructed_tracks:bool, trigger_on_DUTs=None, force:bool=False, pixel_size:float=250e-6, ROI_distance_offset_from_pixel_border:float=88e-6, ROI_width:float=99e-6, calculation_step:float=11e-6, bin_size:float=44e-6):
 	THIS_FUNCTION_PLOTS_LABELS = {
 		'pixel_hit': 'Pixel hit',
 	}
@@ -579,20 +579,14 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 		tracks = tracks[['Px','Py']] # Keep only stuff that will be used.
 		tracks.reset_index('n_track', inplace=True, drop=True) # Not used anymore.
 		
-		################################################################
-		# Some hardcoded stuff #########################################
-		################################################################
-		PIXEL_SIZE = 250e-6
-		ROI_DISTANCE_OFFSET = 88e-6
-		ROI_WIDTH = PIXEL_SIZE/3
 		PIXEL_DEPENDENT_SETTINGS = {
 			'top_row': dict(
 				project_on = 'x',
 				ROI = dict(
-					x_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
-					x_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
-					y_min = PIXEL_SIZE/2-ROI_WIDTH/2,
-					y_max = PIXEL_SIZE/2+ROI_WIDTH/2,
+					x_min = -pixel_size-ROI_distance_offset_from_pixel_border,
+					x_max = pixel_size+ROI_distance_offset_from_pixel_border,
+					y_min = pixel_size/2-ROI_width/2,
+					y_max = pixel_size/2+ROI_width/2,
 				),
 				left_pixel_rowcol = [0,0],
 				right_pixel_rowcol = [0,1],
@@ -600,10 +594,10 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 			'bottom_row': dict(
 				project_on = 'x',
 				ROI = dict(
-					x_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
-					x_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
-					y_min = -PIXEL_SIZE/2-ROI_WIDTH/2,
-					y_max = -PIXEL_SIZE/2+ROI_WIDTH/2,
+					x_min = -pixel_size-ROI_distance_offset_from_pixel_border,
+					x_max = pixel_size+ROI_distance_offset_from_pixel_border,
+					y_min = -pixel_size/2-ROI_width/2,
+					y_max = -pixel_size/2+ROI_width/2,
 					
 				),
 				left_pixel_rowcol = [1,0],
@@ -612,10 +606,10 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 			'left_column': dict(
 				project_on = 'y',
 				ROI = dict(
-					y_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
-					y_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
-					x_min = -PIXEL_SIZE/2-ROI_WIDTH/2,
-					x_max = -PIXEL_SIZE/2+ROI_WIDTH/2,
+					y_min = -pixel_size-ROI_distance_offset_from_pixel_border,
+					y_max = pixel_size+ROI_distance_offset_from_pixel_border,
+					x_min = -pixel_size/2-ROI_width/2,
+					x_max = -pixel_size/2+ROI_width/2,
 				),
 				left_pixel_rowcol = [1,0],
 				right_pixel_rowcol = [0,0],
@@ -623,20 +617,15 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 			'right_column': dict(
 				project_on = 'y',
 				ROI = dict(
-					y_min = -PIXEL_SIZE-ROI_DISTANCE_OFFSET,
-					y_max = PIXEL_SIZE+ROI_DISTANCE_OFFSET,
-					x_min = PIXEL_SIZE/2-ROI_WIDTH/2,
-					x_max = PIXEL_SIZE/2+ROI_WIDTH/2,
+					y_min = -pixel_size-ROI_distance_offset_from_pixel_border,
+					y_max = pixel_size+ROI_distance_offset_from_pixel_border,
+					x_min = pixel_size/2-ROI_width/2,
+					x_max = pixel_size/2+ROI_width/2,
 				),
 				left_pixel_rowcol = [1,1],
 				right_pixel_rowcol = [0,1],
 			),
 		}
-		CALCULATION_STEP = 11e-6
-		ROLLING_WINDOW_SIZE = 44e-6
-		################################################################
-		################################################################
-		################################################################
 		
 		for which_pixels in PIXEL_DEPENDENT_SETTINGS.keys():
 			if analysis_config[which_pixels] == False:
@@ -648,6 +637,11 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 						{
 							'use_estimation_of_misreconstructed_tracks': use_estimation_of_misreconstructed_tracks,
 							'trigger_on_DUTs': trigger_on_DUTs,
+							'pixel_size': pixel_size,
+							'ROI_distance_offset_from_pixel_border': ROI_distance_offset_from_pixel_border,
+							'ROI_width': ROI_width,
+							'calculation_step': calculation_step,
+							'bin_size': bin_size,
 						},
 						ofile,
 						indent = '\t',
@@ -730,7 +724,7 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 				distance_axis = numpy.arange(
 					start = tracks_for_efficiency_calculation[f'P{project_on}'].min(),
 					stop = tracks_for_efficiency_calculation[f'P{project_on}'].max(),
-					step = CALCULATION_STEP,
+					step = calculation_step,
 				)
 				efficiency_data = []
 				for leftright in ['left','right','both']:
@@ -748,7 +742,7 @@ def efficiency_vs_distance_calculation(TI_LGAD_analysis:RunBureaucrat, use_estim
 							DUT_hits = DUT_hits_for_efficiency.index,
 							project_on = project_on,
 							distances = distance_axis,
-							window_size = ROLLING_WINDOW_SIZE,
+							window_size = bin_size,
 							number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area.nominal_value,
 						)
 						error_minus, error_plus = efficiency_vs_1D_distance_rolling_error_estimation(
