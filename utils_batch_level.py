@@ -131,7 +131,7 @@ def load_setup_configuration_info(TB_batch:RunBureaucrat)->pandas.DataFrame:
 	)
 	
 	signals_connections = signals_connections.merge(
-		planes['DUT_name'],
+		planes[['DUT_name','z (m)']],
 		on = 'plane_number',
 	)
 	
@@ -383,13 +383,16 @@ if __name__ == '__main__':
 		format = '%(asctime)s|%(levelname)s|%(message)s',
 		datefmt = '%H:%M:%S',
 	)
-	
-	data = load_parsed_from_waveforms(
-		TB_batch = RunBureaucrat('/media/msenger/230829_gray/AIDAinnova_test_beams/TB/campaigns/subruns/230830_August/batches/subruns/batch_1'),
-		load_this = {
-			'TI228 (0,0)': '`Amplitude (V)` < -.005',
-			'TI228 (1,0)': '`Amplitude (V)` > .01',
-		},
-		variables = ['Amplitude (V)']
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--dir',
+		metavar = 'path', 
+		help = 'Path to the base measurement directory.',
+		required = True,
+		dest = 'directory',
+		type = Path,
 	)
-	print(data.groupby('DUT_name_rowcol').agg(['max','min','count']))
+	args = parser.parse_args()
+	batch = RunBureaucrat(args.directory)
+	setup_batch_info(batch)
+	print(load_setup_configuration_info(batch))
+	print(sorted(load_setup_configuration_info(batch)))
