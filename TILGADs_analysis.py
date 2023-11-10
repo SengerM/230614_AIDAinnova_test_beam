@@ -931,86 +931,87 @@ if __name__ == '__main__':
 	
 	set_my_template_as_default()
 	
-	parser = argparse.ArgumentParser()
-	parser.add_argument('--dir',
-		metavar = 'path', 
-		help = 'Path to the base measurement directory.',
-		required = True,
-		dest = 'directory',
-		type = str,
-	)
-	parser.add_argument('--setup_analysis_for_DUT',
-		metavar = 'DUT_name', 
-		help = 'Name of the DUT name for which to setup a new analysis.',
-		required = False,
-		dest = 'setup_analysis_for_DUT',
-		type = str,
-		default = 'None',
-	)
-	parser.add_argument(
-		'--plot_DUT_distributions',
-		help = 'Pass this flag to run `plot_DUT_distributions`.',
-		required = False,
-		dest = 'plot_DUT_distributions',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--plot_tracks_and_hits',
-		help = 'Pass this flag to run `plot_tracks_and_hits`.',
-		required = False,
-		dest = 'plot_tracks_and_hits',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--transformation_for_centering_and_leveling',
-		help = 'Pass this flag to run `transformation_for_centering_and_leveling`.',
-		required = False,
-		dest = 'transformation_for_centering_and_leveling',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--efficiency_vs_distance_calculation',
-		help = 'Pass this flag to run `efficiency_vs_distance_calculation`.',
-		required = False,
-		dest = 'efficiency_vs_distance_calculation',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--estimate_fraction_of_misreconstructed_tracks',
-		help = 'Pass this flag to run `estimate_fraction_of_misreconstructed_tracks`.',
-		required = False,
-		dest = 'estimate_fraction_of_misreconstructed_tracks',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--plot_cluster_size',
-		help = 'Pass this flag to run `plot_cluster_size`.',
-		required = False,
-		dest = 'plot_cluster_size',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--IPD',
-		help = 'Pass this flag to run `interpixel_distance` analysis.',
-		required = False,
-		dest = 'interpixel_distance',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--force',
-		help = 'If this flag is passed, it will force whatever has to be done, meaning old data will be deleted.',
-		required = False,
-		dest = 'force',
-		action = 'store_true'
-	)
-	parser.add_argument(
-		'--run_all_analyses',
-		help = 'If this flag is passed, it will execute `run_all_analyses_in_a_TILGAD`.',
-		required = False,
-		dest = 'run_all_analyses_in_a_TILGAD',
-		action = 'store_true'
-	)
-	args = parser.parse_args()
+	if True: # This is so I can easily fold all this block...
+		parser = argparse.ArgumentParser()
+		parser.add_argument('--dir',
+			metavar = 'path', 
+			help = 'Path to the base measurement directory.',
+			required = True,
+			dest = 'directory',
+			type = str,
+		)
+		parser.add_argument('--setup_analysis_for_DUT',
+			metavar = 'DUT_name', 
+			help = 'Name of the DUT name for which to setup a new analysis.',
+			required = False,
+			dest = 'setup_analysis_for_DUT',
+			type = str,
+			default = 'None',
+		)
+		parser.add_argument(
+			'--plot_DUT_distributions',
+			help = 'Pass this flag to run `plot_DUT_distributions`.',
+			required = False,
+			dest = 'plot_DUT_distributions',
+			action = 'store_true'
+		)
+		parser.add_argument(
+			'--plot_tracks_and_hits',
+			help = 'Pass this flag to run `plot_tracks_and_hits`.',
+			required = False,
+			dest = 'plot_tracks_and_hits',
+			action = 'store_true'
+		)
+		parser.add_argument(
+			'--transformation_for_centering_and_leveling',
+			help = 'Pass this flag to run `transformation_for_centering_and_leveling`.',
+			required = False,
+			dest = 'transformation_for_centering_and_leveling',
+			action = 'store_true'
+		)
+		parser.add_argument(
+			'--efficiency_vs_distance_calculation',
+			help = 'Pass this flag to run `efficiency_vs_distance_calculation`. This will run it with all the default parameters, for a customized run use the dedicated script instead, which is in a different file.',
+			required = False,
+			dest = 'efficiency_vs_distance_calculation',
+			action = 'store_true'
+		)
+		parser.add_argument(
+			'--estimate_fraction_of_misreconstructed_tracks',
+			help = 'Pass this flag to run `estimate_fraction_of_misreconstructed_tracks`.',
+			required = False,
+			dest = 'estimate_fraction_of_misreconstructed_tracks',
+			action = 'store_true'
+		)
+		parser.add_argument(
+			'--plot_cluster_size',
+			help = 'Pass this flag to run `plot_cluster_size`.',
+			required = False,
+			dest = 'plot_cluster_size',
+			action = 'store_true'
+		)
+		parser.add_argument(
+			'--IPD',
+			help = 'Pass this flag to run `interpixel_distance` analysis.',
+			required = False,
+			dest = 'interpixel_distance',
+			action = 'store_true'
+		)
+		parser.add_argument(
+			'--force',
+			help = 'If this flag is passed, it will force whatever has to be done, meaning old data will be deleted.',
+			required = False,
+			dest = 'force',
+			action = 'store_true'
+		)
+		parser.add_argument(
+			'--run_all_analyses',
+			help = 'If this flag is passed, it will execute `run_all_analyses_in_a_TILGAD`.',
+			required = False,
+			dest = 'run_all_analyses_in_a_TILGAD',
+			action = 'store_true'
+		)
+		args = parser.parse_args()
 	
 	bureaucrat = RunBureaucrat(Path(args.directory))
 	
@@ -1022,7 +1023,10 @@ if __name__ == '__main__':
 		if args.transformation_for_centering_and_leveling == True:
 			transformation_for_centering_and_leveling(bureaucrat, draw_square=True, force=args.force)
 		if args.efficiency_vs_distance_calculation == True:
-			efficiency_vs_distance_calculation(bureaucrat, force=args.force)
+			efficiency_vs_distance_calculation(
+				TI_LGAD_analysis = bureaucrat,
+				use_estimation_of_misreconstructed_tracks = True,
+			)
 		if args.estimate_fraction_of_misreconstructed_tracks == True:
 			estimate_fraction_of_misreconstructed_tracks(bureaucrat, force=args.force)
 		if args.interpixel_distance == True:
