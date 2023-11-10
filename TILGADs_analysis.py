@@ -259,6 +259,17 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 			angle_rotation = analysis_config['rotation_around_z_deg']/180*numpy.pi,
 		)
 		
+		with open(employee.path_to_directory_of_my_task/'transformation_parameters.json', 'w') as ofile:
+			json.dump(
+				dict(
+					x_translation = analysis_config['x_translation'],
+					y_translation = analysis_config['y_translation'],
+					rotation_around_z_deg = analysis_config['rotation_around_z_deg'],
+				),
+				ofile,
+				indent = '\t',
+			)
+		
 		logging.info('Plotting tracks and hits on DUT...')
 		fig = px.scatter(
 			tracks.reset_index(),
@@ -287,7 +298,7 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 			scaleratio = 1,
 		)
 		fig.write_html(
-			employee.path_to_directory_of_my_task/'tracks_projected_on_DUT.html',
+			employee.path_to_directory_of_my_task/'tracks_after_applying_transformation.html',
 			include_plotlyjs = 'cdn',
 		)
 
