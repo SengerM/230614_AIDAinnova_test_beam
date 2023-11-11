@@ -819,6 +819,25 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 				include_plotlyjs = 'cdn',
 			)
 
+def run_all_efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, force:bool=False):
+	"""Runs all `efficiency_vs_distance_left_right` analyses defined in
+	the file `efficiency_vs_distance_left_right.config.json` within a
+	DUT analysis directory."""
+	
+	# Read analysis config:
+	path_to_analysis_config_file = DUT_analysis.path_to_run_directory/'efficiency_vs_distance_left_right.config.json'
+	if not path_to_analysis_config_file.is_file():
+		raise RuntimeError(f'Cannot find analysis config file for {DUT_analysis.pseudopath}. You have to create a json file named {path_to_analysis_config_file.name} in the run directory of {DUT_analysis.pseudopath}. ')
+	with open(path_to_analysis_config_file, 'r') as ifile:
+		analysis_config = json.load(ifile)
+	
+	for analysis_name in analysis_config.keys():
+		efficiency_vs_distance_left_right(
+			DUT_analysis = DUT_analysis,
+			analysis_name = analysis_name,
+			force = force,
+		)
+
 def calculate_interpixel_distance(efficiency_data:pandas.DataFrame, IPD_window:float=66e-6, measure_at_efficiency:float=.5):
 	"""Calculate the inter-pixel distance given the efficiency data.
 	
@@ -1278,7 +1297,7 @@ if __name__ == '__main__':
 		)
 		parser.add_argument(
 			'--efficiency_vs_distance_left_right',
-			help = 'Pass this flag to run `efficiency_vs_distance_left_right`.',
+			help = 'Pass this flag to run `efficiency_vs_distance_left_right`. This option works together with `--analysis_name`, if an analysis name is provided then `efficiency_vs_distance_left_right` is only run for such analysis, if no analysis name is provided then `efficiency_vs_distance_left_right` is run for all the analysis present in the config file.',
 			required = False,
 			dest = 'efficiency_vs_distance_left_right',
 			action = 'store_true'
@@ -1344,7 +1363,10 @@ if __name__ == '__main__':
 		if args.transformation_for_centering_and_leveling == True:
 			transformation_for_centering_and_leveling(bureaucrat, draw_square=True, force=args.force)
 		if args.efficiency_vs_distance_left_right == True:
-			efficiency_vs_distance_left_right(bureaucrat, force=args.force, analysis_name=args.analysis_name)
+			if args.analysis_name is not None:
+				efficiency_vs_distance_left_right(bureaucrat, force=args.force, analysis_name=args.analysis_name)
+			else:
+				run_all_efficiency_vs_distance_left_right(bureaucrat, force=args.force)
 		if args.estimate_fraction_of_misreconstructed_tracks == True:
 			estimate_fraction_of_misreconstructed_tracks(bureaucrat, force=args.force)
 		if args.interpixel_distance == True:
