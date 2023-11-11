@@ -573,7 +573,7 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 	
 	TASK_NAME = 'efficiency_vs_distance_left_right'
 	
-	with DUT_analysis.handle_task(TASK_NAME) as _:
+	with DUT_analysis.handle_task(TASK_NAME, drop_old_data=False) as _:
 		with _.create_subrun(analysis_name, if_exists='skip').handle_task(TASK_NAME) as employee:
 			with open(employee.path_to_run_directory/path_to_analysis_config_file.name, 'w') as ofile:
 				json.dump(
@@ -665,13 +665,13 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 				case 'x':
 					xmin = -pixel_size - ROI_distance_offset_from_pixel_border
 					xmax =  pixel_size + ROI_distance_offset_from_pixel_border
-					ymin = -ROI_width/2 + pixel_size/2 - pixel_size*analysis_config['DUT_left_pixel'][1]
-					ymax =  ROI_width/2 + pixel_size/2 - pixel_size*analysis_config['DUT_left_pixel'][1]
+					ymin = -ROI_width/2 + pixel_size/2 - pixel_size*analysis_config['DUT_left_pixel'][0]
+					ymax =  ROI_width/2 + pixel_size/2 - pixel_size*analysis_config['DUT_left_pixel'][0]
 				case 'y':
 					ymin = -pixel_size - ROI_distance_offset_from_pixel_border
 					ymax =  pixel_size + ROI_distance_offset_from_pixel_border
-					xmin = -ROI_width/2 - pixel_size/2 + pixel_size*analysis_config['DUT_left_pixel'][0]
-					xmax =  ROI_width/2 - pixel_size/2 + pixel_size*analysis_config['DUT_left_pixel'][0]
+					xmin = -ROI_width/2 - pixel_size/2 + pixel_size*analysis_config['DUT_left_pixel'][1]
+					xmax =  ROI_width/2 - pixel_size/2 + pixel_size*analysis_config['DUT_left_pixel'][1]
 				case _:
 					raise RuntimeError('This should have never happen!')
 			
