@@ -5,6 +5,7 @@ import pandas
 import utils_run_level
 import utils
 import logging
+import plotly.graph_objects as go
 
 def setup_batch_info(TB_batch:RunBureaucrat):
 	"""Add some batch-wise information needed for the analysis, like
@@ -372,6 +373,72 @@ def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=True, trigger
 		tracks = utils.select_by_multiindex(tracks, hits_on_trigger_DUTs.index)
 	return tracks
 
+def plot_DUTs_hits(TB_batch:RunBureaucrat):
+	"""Produces a plot with a few tracks from each DUT that should have
+	some hits, and puts them all together, making it easy to see which
+	DUTs overlap in space and where they are located."""
+	TB_batch.check_these_tasks_were_run_successfully('runs')
+	
+	with TB_batch.handle_task('plot_DUTs_hits') as employee:
+	
+		tracks = load_tracks(
+			TB_batch = TB_batch,
+			only_multiplicity_one = True,
+		)
+		
+		setup_config = load_setup_configuration_info(TB_batch)
+		setup_config = setup_config.query('row>=0 and col>=-1') # Negative rows and cols denote fictitious devices, like the trigger line for the CAENs.
+		setup_config = setup_config.sort_values('DUT_name_rowcol')
+		
+		fig = go.Figure()
+		
+		some_random_tracks = tracks.sample(999) if len(tracks)>999 else tracks
+		fig.add_trace(
+			go.Scatter(
+				x = some_random_tracks['Ax'],
+				y = some_random_tracks['Ay'],
+				name = 'Random tracks',
+				mode = 'markers',
+			)
+		)
+		
+		for DUT_name, this_DUT_config in setup_config.groupby('DUT_name'):
+			DUT_noise = load_parsed_from_waveforms(
+				TB_batch = TB_batch,
+				load_this = {_:'`Noise (V)`>0' for _ in this_DUT_config['DUT_name_rowcol']},
+				variables = ['Noise (V)'],
+			)
+			DUT_noise = DUT_noise['Noise (V)'].groupby('DUT_name_rowcol').mean()
+			
+			DUT_hits = load_hits(
+				TB_batch = TB_batch,
+				DUTs_and_hit_criterions = {_:f'`Amplitude (V)`<{-DUT_noise[_]*44}  AND 100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9' for _ in this_DUT_config['DUT_name_rowcol']},
+			)
+			DUT_hits = DUT_hits.sample(999) if len(DUT_hits)>999 else DUT_hits
+			
+			fig.add_trace(
+				go.Scatter(
+					x = utils.select_by_multiindex(tracks, DUT_hits.index)['Ax'],
+					y = utils.select_by_multiindex(tracks, DUT_hits.index)['Ay'],
+					name = DUT_name,
+					mode = 'markers',
+				)
+			)
+		
+		fig.update_layout(
+			title = f'DUTs hits preview<br><sup>{TB_batch.pseudopath}</sup>',
+			xaxis_title = 'Ax (m)',
+			yaxis_title = 'Ay (m)',
+		)
+		fig.update_yaxes(
+			scaleanchor = "x",
+			scaleratio = 1,
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/f'DUTs_hits.html',
+			include_plotlyjs = 'cdn',
+		)
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -386,13 +453,20 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
 		metavar = 'path', 
-		help = 'Path to the base measurement directory.',
+		help = 'Path to a batch.',
 		required = True,
 		dest = 'directory',
 		type = Path,
 	)
+	parser.add_argument(
+		'--plot_DUTs_hits',
+		help = 'If this flag is passed, it will execute `plot_DUTs_hits`.',
+		required = False,
+		dest = 'plot_DUTs_hits',
+		action = 'store_true'
+	)
 	args = parser.parse_args()
 	batch = RunBureaucrat(args.directory)
-	setup_batch_info(batch)
-	print(load_setup_configuration_info(batch))
-	print(sorted(load_setup_configuration_info(batch)))
+	
+	if args.plot_DUTs_hits:
+		plot_DUTs_hits(batch)
