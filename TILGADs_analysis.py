@@ -1241,6 +1241,26 @@ def efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, analysis_name
 				include_plotlyjs = 'cdn',
 			)
 
+def run_all_efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, force:bool=False):
+	"""Runs all `efficiency_increasing_centered_ROI` analyses defined in
+	the file `efficiency_increasing_centered_ROI.config.json` within a
+	DUT analysis directory."""
+	
+	# Read analysis config:
+	path_to_analysis_config_file = DUT_analysis.path_to_run_directory/'efficiency_increasing_centered_ROI.config.json'
+	if not path_to_analysis_config_file.is_file():
+		raise RuntimeError(f'Cannot find analysis config file for {DUT_analysis.pseudopath}. You have to create a json file named {path_to_analysis_config_file.name} in the run directory of {DUT_analysis.pseudopath}. ')
+	with open(path_to_analysis_config_file, 'r') as ifile:
+		analysis_config = json.load(ifile)
+	
+	for analysis_name in analysis_config.keys():
+		logging.info(f'Launching `efficiency_increasing_centered_ROI` for {DUT_analysis.pseudopath}/{analysis_name} (force={force})')
+		efficiency_increasing_centered_ROI(
+			DUT_analysis = DUT_analysis,
+			analysis_name = analysis_name,
+			force = force,
+		)
+
 def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	plot_DUT_distributions(TI_LGAD_analysis, force=force)
 	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False, force=force)
@@ -1383,7 +1403,10 @@ if __name__ == '__main__':
 		if args.run_all_analyses_in_a_TILGAD:
 			run_all_analyses_in_a_TILGAD(bureaucrat, force=args.force)
 		if args.efficiency_increasing_centered_ROI:
-			efficiency_increasing_centered_ROI(bureaucrat, force=args.force, analysis_name=args.analysis_name)
+			if args.analysis_name is not None:
+				efficiency_increasing_centered_ROI(bureaucrat, force=args.force, analysis_name=args.analysis_name)
+			else:
+				run_all_efficiency_increasing_centered_ROI(bureaucrat, force=args.force)
 	elif args.setup_analysis_for_DUT != 'None':
 		setup_TI_LGAD_analysis_within_batch(
 			bureaucrat, 
