@@ -6,6 +6,8 @@ import utils_run_level
 import utils
 import logging
 import plotly.graph_objects as go
+import plotly.express as px
+import dominate # https://github.com/Knio/dominate
 
 def setup_batch_info(TB_batch:RunBureaucrat):
 	"""Add some batch-wise information needed for the analysis, like
@@ -434,6 +436,103 @@ def plot_DUTs_hits(TB_batch:RunBureaucrat):
 			include_plotlyjs = 'cdn',
 		)
 
+def plot_DUT_distributions(TB_batch:RunBureaucrat, max_events_to_plot:int=9999, distributions:bool=True, scatter_plots:bool=True):
+	TB_batch.check_these_tasks_were_run_successfully(['runs','batch_info'])
+	
+	with TB_batch.handle_task('plot_DUT_distributions') as employee:
+		setup_config = load_setup_configuration_info(TB_batch)
+		setup_config = setup_config.query('row>-1 and col>-1') # Negative row col means a fake device, such as a trigger line or so.
+		setup_config = setup_config.sort_values('DUT_name_rowcol')
+		
+		VARIABLES_TO_PLOT_DISTRIBUTION = {'Amplitude (V)','t_50 (s)','Time over 50% (s)','Noise (V)','SNR'}
+		if distributions:
+			save_1D_distributions_here = employee.path_to_directory_of_my_task/'distributions'
+			save_1D_distributions_here.mkdir()
+			for DUT_name,DUT_config in setup_config.groupby('DUT_name'):
+				DUT_config = DUT_config.set_index(['n_CAEN','CAEN_n_channel'])
+				save_plots_here = save_1D_distributions_here/DUT_name
+				save_plots_here.mkdir(parents=True)
+				for variable in VARIABLES_TO_PLOT_DISTRIBUTION:
+					logging.info(f'Producing distribution plot for {variable} for DUT {DUT_name} in {TB_batch.pseudopath}...')
+					data = load_parsed_from_waveforms(
+						TB_batch = TB_batch,
+						load_this = {_:None for _ in DUT_config['DUT_name_rowcol']},
+						variables = [variable],
+					)
+					data = data.unstack('DUT_name_rowcol')
+					if len(data) > max_events_to_plot:
+						data = data.sample(max_events_to_plot)
+					data = data.stack('DUT_name_rowcol')
+					
+					fig = px.ecdf(
+						data_frame = data.reset_index(drop=False).sort_values('DUT_name_rowcol'),
+						x = variable,
+						color = 'DUT_name_rowcol',
+						title = f'{variable} for {DUT_name}<br><sup>{TB_batch.pseudopath}</sup>',
+						marginal = 'histogram',
+					)
+					fig.write_html(
+						save_plots_here/f'{variable}.html',
+						include_plotlyjs = 'cdn',
+					)
+			for variable in VARIABLES_TO_PLOT_DISTRIBUTION:
+				document_title = f'{variable} distribution for all DUTs in {TB_batch.pseudopath}'
+				html_doc = dominate.document(title=document_title)
+				with html_doc:
+					dominate.tags.h1(document_title)
+					for DUT_name in sorted(setup_config['DUT_name'].drop_duplicates()):
+						dominate.tags.iframe(
+							src = f'distributions/{DUT_name}/{variable}.html',
+							style = f'height: 88vh; width: 100%; border-style: solid;',
+						)
+				with open(employee.path_to_directory_of_my_task/f'{variable}.html', 'w') as ofile:
+					print(html_doc, file=ofile)
+		
+		PAIRS_OF_VARIABLES_FOR_SCATTER_PLOTS = {('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')}
+		if scatter_plots:
+			save_2D_scatter_plots_here = employee.path_to_directory_of_my_task/'scatter_plots'
+			save_2D_scatter_plots_here.mkdir()
+			for DUT_name,DUT_config in setup_config.groupby('DUT_name'):
+				DUT_config = DUT_config.set_index(['n_CAEN','CAEN_n_channel'])
+				save_plots_here = save_2D_scatter_plots_here/DUT_name
+				save_plots_here.mkdir(parents=True)
+				for x,y in PAIRS_OF_VARIABLES_FOR_SCATTER_PLOTS:
+					logging.info(f'Producing 2D scatter plot for {y} vs {x} for DUT {DUT_name} in {TB_batch.pseudopath}...')
+					data = load_parsed_from_waveforms(
+						TB_batch = TB_batch,
+						load_this = {_:None for _ in DUT_config['DUT_name_rowcol']},
+						variables = [x,y],
+					)
+					data = data.unstack('DUT_name_rowcol')
+					if len(data) > max_events_to_plot:
+						data = data.sample(max_events_to_plot)
+					data = data.stack('DUT_name_rowcol')
+					
+					fig = px.scatter(
+						data_frame = data.reset_index(drop=False).sort_values('DUT_name_rowcol'),
+						x = x,
+						y = y,
+						color = 'DUT_name_rowcol',
+						title = f'{y} vs {x} for {DUT_name}<br><sup>{TB_batch.pseudopath}</sup>',
+						hover_data = data.index.names,
+					)
+					fig.write_html(
+						save_plots_here/f'{y} vs {x}.html',
+						include_plotlyjs = 'cdn',
+					)
+			for x,y in PAIRS_OF_VARIABLES_FOR_SCATTER_PLOTS:
+				document_title = f'{y} vs {x} scatter preview for all DUTs in {TB_batch.pseudopath}'
+				html_doc = dominate.document(title=document_title)
+				with html_doc:
+					dominate.tags.h1(document_title)
+					for DUT_name in sorted(setup_config['DUT_name'].drop_duplicates()):
+						dominate.tags.iframe(
+							src = f'scatter_plots/{DUT_name}/{y} vs {x}.html',
+							style = f'height: 88vh; width: 100%; border-style: solid;',
+						)
+				with open(employee.path_to_directory_of_my_task/f'{y} vs {x}.html', 'w') as ofile:
+					print(html_doc, file=ofile)
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -445,6 +544,8 @@ if __name__ == '__main__':
 		format = '%(asctime)s|%(levelname)s|%(message)s',
 		datefmt = '%H:%M:%S',
 	)
+	
+	set_my_template_as_default()
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
@@ -462,6 +563,13 @@ if __name__ == '__main__':
 		action = 'store_true'
 	)
 	parser.add_argument(
+		'--plot_DUT_distributions',
+		help = 'If this flag is passed, it will execute `plot_DUT_distributions`.',
+		required = False,
+		dest = 'plot_DUT_distributions',
+		action = 'store_true'
+	)
+	parser.add_argument(
 		'--plot_DUTs_hits',
 		help = 'If this flag is passed, it will execute `plot_DUTs_hits`.',
 		required = False,
@@ -473,5 +581,7 @@ if __name__ == '__main__':
 	
 	if args.setup_batch_info:
 		setup_batch_info(batch)
+	if args.plot_DUT_distributions:
+		plot_DUT_distributions(batch, max_events_to_plot=1111)
 	if args.plot_DUTs_hits:
 		plot_DUTs_hits(batch)
