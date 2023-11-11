@@ -555,6 +555,13 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 	THIS_FUNCTION_PLOTS_LABELS = {
 		'pixel_hit': 'Pixel hit',
 	}
+	_colors = px.colors.qualitative.Plotly
+	THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT = {
+		'none': _colors[0],
+		'left': _colors[1],
+		'right': _colors[2],
+		'both': _colors[3],
+	}
 	DUT_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','transformation_for_centering_and_leveling'])
 	
 	if force == False and DUT_analysis.was_task_run_successfully(TASK_NAME):
@@ -699,6 +706,7 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 					color = 'pixel_hit',
 					hover_data = ['n_run','n_event'],
 					labels = utils.PLOTS_LABELS | THIS_FUNCTION_PLOTS_LABELS,
+					color_discrete_map = THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT,
 				)
 				fig.add_shape(
 					type = "rect",
@@ -735,6 +743,7 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 						color = 'pixel_hit',
 						labels = utils.PLOTS_LABELS | THIS_FUNCTION_PLOTS_LABELS,
 						marginal = 'histogram',
+						color_discrete_map = THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT,
 					)
 					fig.write_html(
 						employee.path_to_directory_of_my_task/f'tracks_used_in_efficiency_calculation_projected_on_{xy}.html',
@@ -803,6 +812,7 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 				error_y_minus = 'Efficiency error_-',
 				color = 'Pixel',
 				error_y_mode = 'bands',
+				color_discrete_map = THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT,
 			)
 			fig.write_html(
 				employee.path_to_directory_of_my_task/'efficiency_vs_distance.html',
