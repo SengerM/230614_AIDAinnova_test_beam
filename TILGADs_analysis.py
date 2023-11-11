@@ -772,7 +772,7 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 						**efficiency_calculation_args,
 						number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty = number_of_noHitTrack_that_are_fake_per_unit_area.std_dev,
 						n_bootstraps = 33,
-						confidence_level = .9,
+						confidence_level = .99,
 					)
 				df = pandas.DataFrame(
 					{
