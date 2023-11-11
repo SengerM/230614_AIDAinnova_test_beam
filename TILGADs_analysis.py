@@ -1194,6 +1194,12 @@ def efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, analysis_name
 				)
 			efficiency = pandas.DataFrame.from_records(efficiency).set_index('ROI_size (m)')
 			
+			utils.save_dataframe(
+				efficiency,
+				name = 'efficiency_vs_ROI_size',
+				location = employee.path_to_directory_of_my_task,
+			)
+			
 			fig = plotly_utils.line(
 				data_frame = efficiency.sort_values('ROI_size (m)').reset_index(drop=False),
 				title = f'Efficiency vs centered ROI size<br><sup>{employee.pseudopath}</sup>',
