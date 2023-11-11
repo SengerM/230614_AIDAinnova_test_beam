@@ -450,6 +450,7 @@ if __name__ == '__main__':
 		format = '%(asctime)s|%(levelname)s|%(message)s',
 		datefmt = '%H:%M:%S',
 	)
+	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
 		metavar = 'path', 
@@ -457,6 +458,13 @@ if __name__ == '__main__':
 		required = True,
 		dest = 'directory',
 		type = Path,
+	)
+	parser.add_argument(
+		'--setup_batch_info',
+		help = 'If this flag is passed, it will execute `setup_batch_info`.',
+		required = False,
+		dest = 'setup_batch_info',
+		action = 'store_true'
 	)
 	parser.add_argument(
 		'--plot_DUTs_hits',
@@ -468,5 +476,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	batch = RunBureaucrat(args.directory)
 	
+	if args.setup_batch_info:
+		setup_batch_info(batch)
 	if args.plot_DUTs_hits:
 		plot_DUTs_hits(batch)
