@@ -564,9 +564,11 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 	}
 	TASK_NAME = 'efficiency_vs_distance_left_right'
 	
-	DUT_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','transformation_for_centering_and_leveling'])
-	
-	if force == False and DUT_analysis.was_task_run_successfully(TASK_NAME):
+	# The checking mechanism becomes a bit tricky because this function actually operates on a subrun...
+	_this_analysis_bureaucrat = [_ for _ in DUT_analysis.list_subruns_of_task(TASK_NAME) if _.run_name==analysis_name]
+	if len(_this_analysis_bureaucrat) > 1: # If it is 0, it was not run yet, if it is 1 it was.
+		raise RuntimeError(f'This should have never happen, check!')
+	if force == False and len(_this_analysis_bureaucrat)==1 and _this_analysis_bureaucrat[0].was_task_run_successfully(TASK_NAME):
 		return
 	
 	# Read analysis config:
@@ -832,6 +834,7 @@ def run_all_efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, force:
 		analysis_config = json.load(ifile)
 	
 	for analysis_name in analysis_config.keys():
+		logging.info(f'Launching `efficiency_vs_distance_left_right` for {DUT_analysis.pseudopath}/{analysis_name} (force={force})')
 		efficiency_vs_distance_left_right(
 			DUT_analysis = DUT_analysis,
 			analysis_name = analysis_name,
@@ -1028,7 +1031,11 @@ def efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, analysis_name
 	LOCAL_PLOT_LABELS = {'hit_in_DUT': 'Detected by DUT', 'ROI_size (m)': 'ROI size (m)'}
 	TASK_NAME = 'efficiency_increasing_centered_ROI'
 	
-	if force == False and DUT_analysis.was_task_run_successfully(TASK_NAME):
+	# The checking mechanism becomes a bit tricky because this function actually operates on a subrun...
+	_this_analysis_bureaucrat = [_ for _ in DUT_analysis.list_subruns_of_task(TASK_NAME) if _.run_name==analysis_name]
+	if len(_this_analysis_bureaucrat) > 1: # If it is 0, it was not run yet, if it is 1 it was.
+		raise RuntimeError(f'This should have never happen, check!')
+	if force == False and len(_this_analysis_bureaucrat)==1 and _this_analysis_bureaucrat[0].was_task_run_successfully(TASK_NAME):
 		return
 	
 	# Read analysis config:
