@@ -288,6 +288,8 @@ def load_hits(TB_batch:RunBureaucrat, DUTs_and_hit_criterions:dict)->pandas.Data
 		load_this = DUTs_and_hit_criterions,
 		variables = None, # We don't need no variables.
 	)
+	if len(hits) == 0: # No hits at all...
+		return hits
 	hits['has_hit'] = True
 	hits = hits.unstack('DUT_name_rowcol', fill_value=False)
 	hits = hits['has_hit'] # Drop unnecessary level.
@@ -418,8 +420,8 @@ def plot_DUTs_hits(TB_batch:RunBureaucrat):
 			
 			fig.add_trace(
 				go.Scatter(
-					x = utils.select_by_multiindex(tracks, DUT_hits.index)['Ax'],
-					y = utils.select_by_multiindex(tracks, DUT_hits.index)['Ay'],
+					x = utils.select_by_multiindex(tracks, DUT_hits.index)['Ax'] if len(DUT_hits)>0 else [float('NaN')],
+					y = utils.select_by_multiindex(tracks, DUT_hits.index)['Ay'] if len(DUT_hits)>0 else [float('NaN')],
 					name = DUT_name,
 					mode = 'markers',
 				)
