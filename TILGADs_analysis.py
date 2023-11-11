@@ -562,6 +562,8 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 		'right': _colors[2],
 		'both': _colors[3],
 	}
+	TASK_NAME = 'efficiency_vs_distance_left_right'
+	
 	DUT_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','transformation_for_centering_and_leveling'])
 	
 	if force == False and DUT_analysis.was_task_run_successfully(TASK_NAME):
@@ -577,8 +579,6 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 		analysis_config = analysis_config.get(analysis_name)
 		if analysis_config is None:
 			raise RuntimeError(f'No analysis named "{analysis_name}" found in analysis config file for {DUT_analysis.pseudopath}. Analyses names found {sorted(_analyses_names_in_config_file)}')
-	
-	TASK_NAME = 'efficiency_vs_distance_left_right'
 	
 	with DUT_analysis.handle_task(TASK_NAME, drop_old_data=False) as _:
 		with _.create_subrun(analysis_name, if_exists='skip').handle_task(TASK_NAME) as employee:
