@@ -1104,23 +1104,54 @@ def efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, analysis_name
 			efficiency = []
 			save_plots_here = employee.path_to_directory_of_my_task/'plots'
 			save_plots_here.mkdir()
-			for ROI_size in ROI_sizes:
-				tracks_within_ROI = tracks.query(f'Px>{-ROI_size/2} and Px<{ROI_size/2} and Py>{-ROI_size/2} and Py<{ROI_size/2}')
-				n_tracks_in_ROI = len(tracks_within_ROI.index.drop_duplicates()) # Drop duplicates is just in case, it should never happen.
-				n_tracks_detected_in_ROI = len(tracks_within_ROI.query('hit_in_DUT==True').index.drop_duplicates()) # Drop duplicates is just in case, it should never happen.
-				n_tracks_undetected_in_ROI = len(tracks_within_ROI.query('hit_in_DUT==False').index.drop_duplicates()) # Drop duplicates is just in case, it should never happen.
-				n_noHitTrack_that_are_fake = number_of_noHitTrack_that_are_fake_per_unit_area*ROI_size**2
+			
+			def calculate_efficiency(tracks, n_noHitTrack_that_are_fake):
+				n_tracks_in_ROI = len(tracks.index.drop_duplicates()) # Drop duplicates is just in case, it should never happen.
+				n_tracks_detected_in_ROI = len(tracks.query('hit_in_DUT==True').index.drop_duplicates()) # Drop duplicates is just in case, it should never happen.
+				n_tracks_undetected_in_ROI = len(tracks.query('hit_in_DUT==False').index.drop_duplicates()) # Drop duplicates is just in case, it should never happen.
 				
 				try:
 					_efficiency = ufloat(n_tracks_detected_in_ROI, n_tracks_detected_in_ROI**.5)/(ufloat(n_tracks_in_ROI, n_tracks_in_ROI**.5)-n_noHitTrack_that_are_fake)
 				except ZeroDivisionError:
 					_efficiency = ufloat(float('NaN'), float('NaN'))
 				
+				return _efficiency
+			
+			def estimate_efficiency_error(tracks, n_noHitTrack_that_are_fake, n_bootstraps:int, confidence_level:float=.68):
+				replicas = []
+				for n_bootstrap in range(n_bootstraps):
+					_ = calculate_efficiency(
+						tracks = tracks.sample(frac=1, replace=True),
+						n_noHitTrack_that_are_fake = n_noHitTrack_that_are_fake,
+					)
+					replicas.append(_.nominal_value)
+				replicas = numpy.array(replicas)
+				value = numpy.quantile(replicas, q=.5, axis=0, method='interpolated_inverted_cdf')
+				error_up = numpy.quantile(replicas, q=.5+confidence_level/2, axis=0, method='interpolated_inverted_cdf') - value
+				error_down = value - numpy.quantile(replicas, q=.5-confidence_level/2, axis=0, method='interpolated_inverted_cdf')
+				
+				return error_down, error_up
+			
+			logging.info(f'Calculating efficiency vs ROI size for {employee.pseudopath}...')
+			for ROI_size in ROI_sizes:
+				tracks_within_ROI = tracks.query(f'Px>{-ROI_size/2} and Px<{ROI_size/2} and Py>{-ROI_size/2} and Py<{ROI_size/2}')
+				_efficiency = calculate_efficiency(
+					tracks = tracks_within_ROI,
+					n_noHitTrack_that_are_fake = number_of_noHitTrack_that_are_fake_per_unit_area*ROI_size**2,
+				)
+				error_down, error_up = estimate_efficiency_error(
+					tracks = tracks_within_ROI,
+					n_noHitTrack_that_are_fake = number_of_noHitTrack_that_are_fake_per_unit_area*ROI_size**2,
+					confidence_level = .99,
+					n_bootstraps = 99,
+				)
+				
 				efficiency.append(
 					{
 						'ROI_size (m)': ROI_size,
 						'efficiency': _efficiency.nominal_value,
-						'efficiency_error': _efficiency.std_dev,
+						'efficiency_error_up': error_up,
+						'efficiency_error_down': error_down,
 					}
 				)
 				
@@ -1149,7 +1180,7 @@ def efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, analysis_name
 					y0 = -ROI_size/2, 
 					x1 = ROI_size/2, 
 					y1 = ROI_size/2,
-					line = dict(color="#15ab13", dash='dot'),
+					line = dict(color="#15ab13"),
 					name = 'ROI',
 					showlegend = True,
 				)
@@ -1168,7 +1199,8 @@ def efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, analysis_name
 				title = f'Efficiency vs centered ROI size<br><sup>{employee.pseudopath}</sup>',
 				x = 'ROI_size (m)',
 				y = 'efficiency',
-				error_y = 'efficiency_error',
+				error_y = 'efficiency_error_up',
+				error_y_minus = 'efficiency_error_down',
 				error_y_mode = 'band',
 				labels = utils.PLOTS_LABELS | LOCAL_PLOT_LABELS,
 			)
