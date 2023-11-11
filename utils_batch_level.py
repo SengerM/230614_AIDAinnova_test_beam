@@ -405,16 +405,9 @@ def plot_DUTs_hits(TB_batch:RunBureaucrat):
 		)
 		
 		for DUT_name, this_DUT_config in setup_config.groupby('DUT_name'):
-			DUT_noise = load_parsed_from_waveforms(
-				TB_batch = TB_batch,
-				load_this = {_:'`Noise (V)`>0' for _ in this_DUT_config['DUT_name_rowcol']},
-				variables = ['Noise (V)'],
-			)
-			DUT_noise = DUT_noise['Noise (V)'].groupby('DUT_name_rowcol').mean()
-			
 			DUT_hits = load_hits(
 				TB_batch = TB_batch,
-				DUTs_and_hit_criterions = {_:f'`Amplitude (V)`<{-DUT_noise[_]*44}  AND 100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9' for _ in this_DUT_config['DUT_name_rowcol']},
+				DUTs_and_hit_criterions = {_:f'`SNR`>33  AND 100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9' for _ in this_DUT_config['DUT_name_rowcol']},
 			)
 			DUT_hits = DUT_hits.sample(999) if len(DUT_hits)>999 else DUT_hits
 			
