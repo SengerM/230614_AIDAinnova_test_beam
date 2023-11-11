@@ -330,7 +330,7 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat,
 		hit_multiplicity = DUT_hits.sum(axis=1)
 		
 		logging.info('Applying transformation to tracks to center and align DUT...')
-		transformation_parameters = get_transformation_parameters(analysis)
+		transformation_parameters = get_transformation_parameters(TI_LGAD_analysis)
 		tracks[['Px_transformed','Py_transformed']] = translate_and_then_rotate(
 			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
 			x_translation = transformation_parameters['x_translation'],
