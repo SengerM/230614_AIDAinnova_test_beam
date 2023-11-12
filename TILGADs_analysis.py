@@ -468,13 +468,13 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat,
 			error_y = 'probability_corry_fails error',
 			markers = True,
 			labels = {
-				'probability_corry_fails': 'Reconstruction fail probability',
+				'probability_corry_fails': 'Probability',
 				'DUT_ROI_size (m)': 'DUT ROI size (m)',
 			},
 		)
 		fig.add_hline(
 			probability_corry_fails_final_value.nominal_value,
-			annotation_text = f'Probability that corry fails = {probability_corry_fails_final_value}',
+			annotation_text = f'Reconstruction error probability = {probability_corry_fails_final_value}',
 		)
 		fig.add_hrect(
 			y0 = probability_corry_fails_final_value.nominal_value - probability_corry_fails_final_value.std_dev,
