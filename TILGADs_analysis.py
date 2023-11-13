@@ -1261,6 +1261,49 @@ def run_all_efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, force
 			force = force,
 		)
 
+def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int):
+	efficiency_analysis.check_these_tasks_were_run_successfully('efficiency_2D')
+	if any([efficiency_analysis.was_task_run_successfully(_) for _ in {'this_is_a_TI-LGAD_analysis','this_is_an_RSD-LGAD_analysis'}]):
+		raise RuntimeError(f'`efficiency_analysis` is pointing to {efficiency_analysis.pseudopath} which looks like an analysis of a DUT rather than an efficiency analysis...')
+	
+	efficiency = pandas.read_pickle(efficiency_analysis.path_to_directory_of_task('efficiency_2D')/'efficiency.pickle')
+	
+	for col in {'efficiency','efficiency_error'}:
+		efficiency.loc[efficiency['total_count']<=min_counts_cutoff, col] = float('NaN') # Remove data in those places where there is almost no data.
+	
+	with efficiency_analysis.handle_task('plot_efficiency_vs_position') as employee:
+		for col in {'efficiency','efficiency_error','detected_count','total_count'}:
+			fig = px.imshow(
+				efficiency.set_index(['x','y']).unstack('x')[col],
+				# ~ range_color = (.7,1) if col in {'efficiency'} else None,
+				title = f'{col} vs position<br><sup>{employee.pseudopath}</sup>',
+				labels = {
+					'x': 'x (m)',
+					'y': 'y (m)',
+				},
+				aspect = 'equal',
+			)
+			fig.update_layout(
+				coloraxis_colorbar_title_text = col,
+			)
+			fig.update_coloraxes(colorbar_title_side='right')
+			for line_color, line_width in [('black',2.5),('white',1)]:
+				fig.add_shape(
+					type = "rect",
+					x0 = -250e-6, 
+					y0 = -250e-6, 
+					x1 = 250e-6, 
+					y1 = 250e-6,
+					line = dict(
+						color = line_color,
+						width = line_width,
+					),
+				)
+			fig.write_html(
+				employee.path_to_directory_of_my_task/f'{col}_vs_position.html',
+				include_plotlyjs = 'cdn',
+			)
+
 def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=False):
 	"""Calculates the efficiency sweeping a square ROI along the surface
 	in the x y plane. Expects to find a file named `efficiency_2D.config.json`
@@ -1429,40 +1472,10 @@ def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=Fals
 				location = employee.path_to_directory_of_my_task,
 			)
 			
-			for col in {'efficiency','efficiency_error'}:
-				efficiency.loc[efficiency['total_count']<=5, col] = float('NaN') # Remove data in those places where there is almost no data.
-			
-			for col in {'efficiency','efficiency_error','detected_count','total_count'}:
-				fig = px.imshow(
-					efficiency.set_index(['x','y']).unstack('x')[col],
-					# ~ range_color = (.7,1) if col in {'efficiency'} else None,
-					title = f'{col} vs position<br><sup>{employee.pseudopath}</sup>',
-					labels = {
-						'x': 'x (m)',
-						'y': 'y (m)',
-					},
-					aspect = 'equal',
-				)
-				fig.update_layout(
-					coloraxis_colorbar_title_text = col,
-				)
-				fig.update_coloraxes(colorbar_title_side='right')
-				for line_color, line_width in [('black',2.5),('white',1)]:
-					fig.add_shape(
-						type = "rect",
-						x0 = -250e-6, 
-						y0 = -250e-6, 
-						x1 = 250e-6, 
-						y1 = 250e-6,
-						line = dict(
-							color = line_color,
-							width = line_width,
-						),
-					)
-				fig.write_html(
-					employee.path_to_directory_of_my_task/f'{col}_vs_position.html',
-					include_plotlyjs = 'cdn',
-				)
+	plot_efficiency_2D(
+		efficiency_analysis = employee.boss,
+		min_counts_cutoff = 5,
+	)
 
 def run_all_efficiency_2D(DUT_analysis:RunBureaucrat, force:bool=False):
 	"""Runs all `efficiency_2D` analyses defined in
