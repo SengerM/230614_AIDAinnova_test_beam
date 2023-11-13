@@ -1261,6 +1261,210 @@ def run_all_efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, force
 			force = force,
 		)
 
+def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=False):
+	"""Calculates the efficiency sweeping a square ROI along the surface
+	in the x y plane. Expects to find a file named `efficiency_2D.config.json`
+	in the run directory with a content like this:
+	```
+	{
+		"my_2D_efficiency_calculation": {
+			"DUT_hit_criterion": "`Amplitude (V)`<-5e-3 AND 100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9",
+			"use_estimation_of_misreconstructed_tracks": false,
+			"trigger_on_DUTs": {
+				"TI145 (0,0)": "`Amplitude (V)`<-5e-3 AND 100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9",
+				"TI145 (0,1)": "`Amplitude (V)`<-5e-3 AND 100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9",
+				"TI145 (1,0)": "`Amplitude (V)`<-5e-3 AND 100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9",
+				"TI145 (1,1)": "`Amplitude (V)`<-5e-3 AND 100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9"
+			},
+			"xmin": -222e-6,
+			"xmax": 222e-6,
+			"x_step": 11e-6,
+			"bin_size_x": 22e-6,
+			"ymin": -222e-6,
+			"ymax": 222e-6,
+			"y_step": 11e-6,
+			"bin_size_y": 22e-6,
+		}
+	}
+	```
+	where the top level dictionary specifies different analyses with the
+	key being the `analysis_name` and the items the analysis config.
+	"""
+	DUT_analysis.check_these_tasks_were_run_successfully(['this_is_a_TI-LGAD_analysis','transformation_for_centering_and_leveling'])
+	LOCAL_PLOT_LABELS = {'hit_in_DUT': 'Detected by DUT', 'ROI_size (m)': 'ROI size (m)'}
+	TASK_NAME = 'efficiency_2D'
+	
+	# The checking mechanism becomes a bit tricky because this function actually operates on a subrun...
+	_this_analysis_bureaucrat = [_ for _ in DUT_analysis.list_subruns_of_task(TASK_NAME) if _.run_name==analysis_name]
+	if len(_this_analysis_bureaucrat) > 1: # If it is 0, it was not run yet, if it is 1 it was.
+		raise RuntimeError(f'This should have never happen, check!')
+	if force == False and len(_this_analysis_bureaucrat)==1 and _this_analysis_bureaucrat[0].was_task_run_successfully(TASK_NAME):
+		return
+	
+	# Read analysis config:
+	path_to_analysis_config_file = DUT_analysis.path_to_run_directory/f'{TASK_NAME}.config.json'
+	if not path_to_analysis_config_file.is_file():
+		raise RuntimeError(f'Cannot find analysis config file for {DUT_analysis.pseudopath}. You have to create a json file named {path_to_analysis_config_file.name} in the run directory of {DUT_analysis.pseudopath}. ')
+	with open(path_to_analysis_config_file, 'r') as ifile:
+		analysis_config = json.load(ifile)
+		_analyses_names_in_config_file = analysis_config.keys()
+		analysis_config = analysis_config.get(analysis_name)
+		if analysis_config is None:
+			raise RuntimeError(f'No analysis named "{analysis_name}" found in analysis config file for {DUT_analysis.pseudopath}. Analyses names found {sorted(_analyses_names_in_config_file)}')
+	
+	with DUT_analysis.handle_task(TASK_NAME, drop_old_data=False) as _:
+		with _.create_subrun(analysis_name, if_exists='skip').handle_task(TASK_NAME) as employee:
+			with open(employee.path_to_run_directory/path_to_analysis_config_file.name, 'w') as ofile:
+				json.dump(
+					analysis_config,
+					ofile,
+					indent = '\t',
+				)
+			
+			setup_config = utils_batch_level.load_setup_configuration_info(DUT_analysis.parent)
+			
+			tracks = utils_batch_level.load_tracks(
+				DUT_analysis.parent, 
+				only_multiplicity_one = True,
+				trigger_on_DUTs = analysis_config.get('trigger_on_DUTs'),
+			)
+			DUT_z_position = list(set(setup_config.query(f'DUT_name == "{DUT_analysis.run_name}"')['z (m)']))
+			if len(DUT_z_position) != 1: # This should never happen, but just in case it is better to be prepared.
+				raise RuntimeError(f'Cannot determine DUT z position for {DUT_analysis.pseudopath}. ')
+			else:
+				DUT_z_position = DUT_z_position[0]
+			tracks = tracks.join(tracks_utils.project_tracks(tracks, z=DUT_z_position))
+			
+			DUT_hits = utils_batch_level.load_hits(
+				TB_batch = DUT_analysis.parent,
+				DUTs_and_hit_criterions = {DUT_name_rowcol:analysis_config['DUT_hit_criterion'] for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{DUT_analysis.run_name}"')['DUT_name_rowcol'])},
+			)
+			
+			transformation_parameters = get_transformation_parameters(DUT_analysis)
+			
+			if analysis_config.get('use_estimation_of_misreconstructed_tracks') == True:
+				DUT_analysis.check_these_tasks_were_run_successfully('estimate_fraction_of_misreconstructed_tracks')
+				misreconstruction_probability = pandas.read_pickle(DUT_analysis.path_to_directory_of_task('estimate_fraction_of_misreconstructed_tracks')/'probability_that_corry_fails.pickle')
+				misreconstruction_probability = ufloat(misreconstruction_probability['probability_corry_fails'],misreconstruction_probability['probability_corry_fails_error'])
+			
+				# To estimate the total area, I use the tracks data before the transformation (rotation and translation) in which the total area should be a rectangle aligned with x and y, and then apply the transformation wherever needed.
+				total_area_corners = pandas.DataFrame(
+					{
+						'x': [tracks['Px'].min(), tracks['Px'].max(), tracks['Px'].max(), tracks['Px'].min()],
+						'y': [tracks['Py'].min(), tracks['Py'].min(), tracks['Py'].max(), tracks['Py'].max()],
+						'which_corner': ['bottom_left','bottom_right','top_right','top_left'],
+					},
+				).set_index('which_corner')
+				total_area_corners[['x_transformed','y_transformed']] = translate_and_then_rotate(
+					points = total_area_corners,
+					x_translation = transformation_parameters['x_translation'],
+					y_translation = transformation_parameters['y_translation'],
+					angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi,
+				)
+				total_area = (total_area_corners.loc['bottom_right','x']-total_area_corners.loc['bottom_left','x'])*(total_area_corners.loc['top_left','y']-total_area_corners.loc['bottom_left','y'])
+				
+				tracks_with_no_hit_in_the_DUT = tracks_utils.tag_tracks_with_DUT_hits(tracks, DUT_hits).query('DUT_name_rowcol == "no hit"')
+				number_of_tracks_with_no_hit_in_the_DUT = len(tracks_with_no_hit_in_the_DUT.index.drop_duplicates()) # The "drop duplicates" thing is just in case to avoid double counting, anyhow it is not expected.
+				number_of_noHitTrack_that_are_fake_per_unit_area = number_of_tracks_with_no_hit_in_the_DUT*misreconstruction_probability/total_area
+			else:
+				number_of_noHitTrack_that_are_fake_per_unit_area = ufloat(0,0)
+			
+			tracks[['Px','Py']] = translate_and_then_rotate(
+				points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+				x_translation = transformation_parameters['x_translation'],
+				y_translation = transformation_parameters['y_translation'],
+				angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi,
+			)
+			
+			tracks = tracks[['Px','Py']] # Keep only stuff that will be used.
+			tracks.reset_index('n_track', inplace=True, drop=True) # Not used anymore.
+			
+			def calculate_2D_efficiency(tracks:pandas.DataFrame, DUT_hits:pandas.Index, xmin:float, xmax:float, x_step:float, bin_size_x:float, ymin:float, ymax:float, y_step:float, bin_size_y:float, number_of_noHitTrack_that_are_fake_per_unit_area:float):
+				if DUT_hits.names != tracks.index.names:
+					raise ValueError(f'The level names of `tracks.index` must be the same as those in `DUT_hits`. ')
+				
+				detected_tracks = utils.select_by_multiindex(tracks, DUT_hits)
+				efficiency = []
+				for nx,x in enumerate(numpy.linspace(xmin,xmax,int((xmax-xmin)/x_step))):
+					for ny,y in enumerate(numpy.linspace(ymin,ymax,int((ymax-ymin)/y_step))):
+						detected_here = detected_tracks.query(f'Px>{x-bin_size_x/2} and Px<{x+bin_size_x/2} and Py>{y-bin_size_y/2} and Py<{y+bin_size_y/2}')
+						total_here = tracks.query(f'Px>{x-bin_size_x/2} and Px<{x+bin_size_x/2} and Py>{y-bin_size_y/2} and Py<{y+bin_size_y/2}')
+						
+						detected_count = len(detected_here.index.drop_duplicates())
+						total_count = len(total_here.index.drop_duplicates())
+						
+						detected_count = ufloat(detected_count, detected_count**.5)
+						total_count = ufloat(total_count, total_count**.5)
+						
+						try:
+							efficiency_here = detected_count/(total_count - number_of_noHitTrack_that_are_fake_per_unit_area*bin_size_x*bin_size_y)
+						except ZeroDivisionError:
+							efficiency_here = ufloat(float('NaN'), float('NaN'))
+						
+						efficiency.append(
+							{
+								'x': x,
+								'n_x': nx,
+								'y': y,
+								'n_y': ny,
+								'efficiency': efficiency_here.nominal_value,
+								'efficiency_error': efficiency_here.std_dev,
+								'detected_count': int(detected_count.nominal_value),
+								'total_count': int(total_count.nominal_value),
+							}
+						)
+				return pandas.DataFrame.from_records(efficiency).set_index(['n_x','n_y'])
+			
+			logging.info(f'Calculating efficiency 2D for {employee.pseudopath}...')
+			efficiency = calculate_2D_efficiency(
+				tracks = tracks,
+				DUT_hits = DUT_hits.index,
+				number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area,
+				**{_: analysis_config[_] for _ in {'xmin','xmax','x_step','bin_size_x','ymin','ymax','y_step','bin_size_y'}},
+			)
+			
+			utils.save_dataframe(
+				efficiency,
+				name = 'efficiency',
+				location = employee.path_to_directory_of_my_task,
+			)
+			
+			for col in {'efficiency','efficiency_error'}:
+				efficiency.loc[efficiency['total_count']<=5, col] = float('NaN') # Remove data in those places where there is almost no data.
+			
+			for col in {'efficiency','efficiency_error','detected_count','total_count'}:
+				fig = px.imshow(
+					efficiency.set_index(['x','y']).unstack('x')[col],
+					# ~ range_color = (.7,1) if col in {'efficiency'} else None,
+					title = f'{col} vs position<br><sup>{employee.pseudopath}</sup>',
+					labels = {
+						'x': 'x (m)',
+						'y': 'y (m)',
+					},
+					aspect = 'equal',
+				)
+				fig.update_layout(
+					coloraxis_colorbar_title_text = col,
+				)
+				fig.update_coloraxes(colorbar_title_side='right')
+				for line_color, line_width in [('black',2.5),('white',1)]:
+					fig.add_shape(
+						type = "rect",
+						x0 = -250e-6, 
+						y0 = -250e-6, 
+						x1 = 250e-6, 
+						y1 = 250e-6,
+						line = dict(
+							color = line_color,
+							width = line_width,
+						),
+					)
+				fig.write_html(
+					employee.path_to_directory_of_my_task/f'{col}_vs_position.html',
+					include_plotlyjs = 'cdn',
+				)
+			a
+
 def run_all_analyses_in_a_TILGAD(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 	plot_DUT_distributions(TI_LGAD_analysis, force=force)
 	plot_tracks_and_hits(TI_LGAD_analysis, do_3D_plot=False, force=force)
@@ -1372,6 +1576,13 @@ if __name__ == '__main__':
 			action = 'store_true'
 		)
 		parser.add_argument(
+			'--efficiency_2D',
+			help = 'If this flag is passed, it will execute `efficiency_2D`.',
+			required = False,
+			dest = 'efficiency_2D',
+			action = 'store_true'
+		)
+		parser.add_argument(
 			'--analysis_name',
 			help = 'Specifies the name of the analysis to run, if it has to be chosen from a config file with multiple analyses.',
 			required = False,
@@ -1402,6 +1613,8 @@ if __name__ == '__main__':
 			plot_cluster_size(bureaucrat, force=args.force)
 		if args.run_all_analyses_in_a_TILGAD:
 			run_all_analyses_in_a_TILGAD(bureaucrat, force=args.force)
+		if args.efficiency_2D:
+			efficiency_2D(bureaucrat, force=args.force, analysis_name=args.analysis_name)
 		if args.efficiency_increasing_centered_ROI:
 			if args.analysis_name is not None:
 				efficiency_increasing_centered_ROI(bureaucrat, force=args.force, analysis_name=args.analysis_name)
