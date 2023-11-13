@@ -1282,6 +1282,7 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 					'y': 'y (m)',
 				},
 				aspect = 'equal',
+				origin = 'lower',
 			)
 			fig.update_layout(
 				coloraxis_colorbar_title_text = col,
@@ -1315,6 +1316,7 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 				'y': 'y (m)',
 			},
 			aspect = 'equal',
+			origin = 'lower',
 		)
 		fig.update_layout(
 			coloraxis_colorbar_title_text = 'efficiency',
