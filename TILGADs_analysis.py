@@ -1345,7 +1345,134 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 			employee.path_to_directory_of_my_task/f'efficiency_vs_position_nonlinear_scale.html',
 			include_plotlyjs = 'cdn',
 		)
+	
+def efficiency_2D_statistics(efficiency_analysis:RunBureaucrat):
+	efficiency_analysis.check_these_tasks_were_run_successfully('efficiency_2D')
+	if any([efficiency_analysis.was_task_run_successfully(_) for _ in {'this_is_a_TI-LGAD_analysis','this_is_an_RSD-LGAD_analysis'}]):
+		raise RuntimeError(f'`efficiency_analysis` is pointing to {efficiency_analysis.pseudopath} which looks like an analysis of a DUT rather than an efficiency analysis...')
+	
+	with efficiency_analysis.handle_task('efficiency_2D_statistics') as employee:
+		efficiency = pandas.read_pickle(efficiency_analysis.path_to_directory_of_task('efficiency_2D')/'efficiency.pickle')
+		# ~ efficiency['efficiency_ufloat'] = efficiency[['efficiency','efficiency_error']].apply(lambda x: ufloat(x['efficiency'],x['efficiency_error']), axis=1)
 		
+		with open(efficiency_analysis.path_to_directory_of_task('efficiency_2D.config.json'), 'r') as ifile:
+			analysis_config = json.load(ifile)
+		
+		# Define the ROI, only those bins that lie completely inside the DUT
+		PIXEL_SIZE = 250e-6
+		x_max =  PIXEL_SIZE - analysis_config['bin_size_x']
+		x_min = -PIXEL_SIZE + analysis_config['bin_size_x']
+		y_max =  PIXEL_SIZE - analysis_config['bin_size_y']
+		y_min = -PIXEL_SIZE + analysis_config['bin_size_y']
+		
+		for col in {'efficiency','efficiency_error'}:
+			efficiency.loc[efficiency['total_count']<=5, col] = float('NaN') # Remove data in those places where there is almost no data.
+		
+		efficiency['within_ROI'] = False
+		efficiency.loc[(efficiency['x']>x_min) & (efficiency['x']<x_max) & (efficiency['y']>y_min) & (efficiency['y']<y_max), 'within_ROI'] = True
+		
+		# Calculate some statistics:
+		_ = efficiency.query('within_ROI==True').dropna()
+		_ = _.query(f'efficiency > {_["efficiency"].quantile(.1)}') # Drop some outliers.
+		efficiency_stats = _[['efficiency','total_count']].describe()
+		
+		utils.save_dataframe(
+			efficiency_stats,
+			name = 'efficiency_stats',
+			location = employee.path_to_directory_of_my_task,
+		)
+		
+		for col in ['efficiency','total_count','detected_count']:
+			fig = px.ecdf(
+				data_frame = efficiency.query('within_ROI == True'),
+				title = f'{col} distribution inside DUT ROI<br><sup>{employee.pseudopath}</sup>',
+				x = col,
+				marginal = 'histogram',
+				hover_data = ['total_count'],
+			)
+			fig.write_html(
+				employee.path_to_directory_of_my_task/f'{col} distribution.html',
+				include_plotlyjs = 'cdn',
+			)
+		
+		# Heatmap with the efficiency:
+		fig = px.imshow(
+			efficiency.set_index(['x','y']).unstack('x')['efficiency']*100,
+			range_color = (0,100),
+			title = f'efficiency vs position<br><sup>{employee.pseudopath}</sup>',
+			labels = {
+				'x': 'x (m)',
+				'y': 'y (m)',
+			},
+			aspect = 'equal',
+			origin = 'lower',
+		)
+		fig.update_layout(
+			coloraxis_colorbar_title_text = 'Efficiency (%)',
+		)
+		fig.update_coloraxes(colorbar_title_side='right')
+		
+		def draw_pixel(fig, x0, y0, x1, y1, **kwargs):
+			for line_color, line_width in [('black',2.5),('white',1)]:
+				fig.add_shape(
+					x0 = x0,
+					y0 = y0,
+					x1 = x1,
+					y1 = y1,
+					type = "rect",
+					line = dict(
+						color = line_color,
+						width = line_width,
+					),
+					**kwargs,
+				)
+		
+		def draw_DUT(fig, pixel_size, **kwargs):
+			for i in [0,1]:
+				for j in [0,1]:
+					draw_pixel(
+						fig = fig,
+						x0 = pixel_size*j - pixel_size,
+						y0 = pixel_size*i - pixel_size,
+						x1 = pixel_size*j,
+						y1 = pixel_size*i,
+						**kwargs,
+					)
+			draw_pixel(
+				fig = fig,
+				x0 = - pixel_size,
+				y0 = - pixel_size,
+				x1 = pixel_size,
+				y1 = pixel_size,
+				**kwargs,
+			)
+		
+		PIXEL_SIZE = 250e-6
+		draw_DUT(fig, pixel_size=PIXEL_SIZE,)
+		
+		fig.add_shape(
+			type = "rect",
+			x0 = x_min,
+			y0 = y_min,
+			x1 = x_max,
+			y1 = y_max,
+			line = dict(
+				color = 'black',
+				dash = 'dash',
+			),
+		)
+		fig.add_annotation(
+			x = PIXEL_SIZE*.1,
+			y = y_max,
+			text = f'Efficiency = {ufloat(efficiency_stats.loc["mean","efficiency"], efficiency_stats.loc["std","efficiency"])*100} %'.replace('+/-','±'),
+			bgcolor = 'white',
+			arrowcolor = 'black',
+			bordercolor = 'black',
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/f'efficiency_vs_position.html',
+			include_plotlyjs = 'cdn',
+		)
 
 def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=False):
 	"""Calculates the efficiency sweeping a square ROI along the surface
@@ -1518,6 +1645,9 @@ def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=Fals
 	plot_efficiency_2D(
 		efficiency_analysis = employee.boss,
 		min_counts_cutoff = 5,
+	)
+	efficiency_2D_statistics(
+		efficiency_analysis = employee.boss,
 	)
 
 def run_all_efficiency_2D(DUT_analysis:RunBureaucrat, force:bool=False):
