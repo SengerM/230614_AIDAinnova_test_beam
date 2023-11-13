@@ -1275,7 +1275,6 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 		for col in {'efficiency','efficiency_error','detected_count','total_count'}:
 			fig = px.imshow(
 				efficiency.set_index(['x','y']).unstack('x')[col],
-				range_color = (0,1) if col in {'efficiency'} else None,
 				title = f'{col} vs position<br><sup>{employee.pseudopath}</sup>',
 				labels = {
 					'x': 'x (m)',
