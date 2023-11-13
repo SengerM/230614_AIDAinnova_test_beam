@@ -1275,7 +1275,7 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 		for col in {'efficiency','efficiency_error','detected_count','total_count'}:
 			fig = px.imshow(
 				efficiency.set_index(['x','y']).unstack('x')[col],
-				# ~ range_color = (.7,1) if col in {'efficiency'} else None,
+				range_color = (0,1) if col in {'efficiency'} else None,
 				title = f'{col} vs position<br><sup>{employee.pseudopath}</sup>',
 				labels = {
 					'x': 'x (m)',
@@ -1303,6 +1303,47 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 				employee.path_to_directory_of_my_task/f'{col}_vs_position.html',
 				include_plotlyjs = 'cdn',
 			)
+		
+		# Efficiency in cuadratic scale, to better see details close to 1:
+		power = 4
+		fig = px.imshow(
+			efficiency.set_index(['x','y']).unstack('x')['efficiency']**power,
+			range_color = (0,1),
+			title = f'efficiency vs position (x<sup>{power}</sup> scale)<br><sup>{employee.pseudopath}</sup>',
+			labels = {
+				'x': 'x (m)',
+				'y': 'y (m)',
+			},
+			aspect = 'equal',
+		)
+		fig.update_layout(
+			coloraxis_colorbar_title_text = 'efficiency',
+		)
+		COLOR_TICKS = [dict(val=_/10, text=f'{_/10:.1f}') for _ in [0,1,2,3,4,5,6,7,8,9,10]]
+		fig.update_layout(
+			coloraxis_colorbar = dict(
+				tickvals = [_['val']**power for _ in COLOR_TICKS],
+				ticktext = [_['text'] for _ in COLOR_TICKS],
+			),
+		)
+		fig.update_coloraxes(colorbar_title_side='right')
+		for line_color, line_width in [('black',2.5),('white',1)]:
+			fig.add_shape(
+				type = "rect",
+				x0 = -250e-6, 
+				y0 = -250e-6, 
+				x1 = 250e-6, 
+				y1 = 250e-6,
+				line = dict(
+					color = line_color,
+					width = line_width,
+				),
+			)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/f'efficiency_vs_position_nonlinear_scale.html',
+			include_plotlyjs = 'cdn',
+		)
+		
 
 def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=False):
 	"""Calculates the efficiency sweeping a square ROI along the surface
