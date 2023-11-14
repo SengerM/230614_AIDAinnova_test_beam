@@ -1423,6 +1423,16 @@ def DUT_effective_efficiency(efficiency_analysis:RunBureaucrat):
 			efficiency.query('within_ROI==True')['efficiency'].mean(),
 			efficiency.query('within_ROI==True')['efficiency_error'].mean(),
 		)
+		utils.save_dataframe(
+			pandas.Series(
+				dict(
+					effective_efficiency = effective_efficiency.nominal_value,
+					effective_efficiency_error = effective_efficiency.std_dev,
+				)
+			),
+			'effective_efficiency',
+			employee.path_to_directory_of_my_task,
+		)
 		# Plot each of the different measurements of the efficiency we have:
 		fig = px.scatter(
 			data_frame = efficiency.reset_index(drop=False),
