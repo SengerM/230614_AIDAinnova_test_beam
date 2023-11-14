@@ -1142,9 +1142,6 @@ def efficiency_increasing_centered_ROI(DUT_analysis:RunBureaucrat, analysis_name
 			else:
 				number_of_noHitTrack_that_are_fake_per_unit_area = ufloat(0,0)
 			
-			logging.info('Applying transformation to tracks to center and align DUT...')
-			
-			
 			tracks[['Px','Py']] = translate_and_then_rotate(
 				points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
 				x_translation = transformation_parameters['x_translation'],
