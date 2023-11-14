@@ -482,7 +482,10 @@ def estimate_fraction_of_misreconstructed_tracks(TI_LGAD_analysis:RunBureaucrat,
 		data = pandas.DataFrame.from_records(data)
 		
 		dydx = data['probability_corry_fails'].diff()/data['DUT_ROI_size (m)'].diff()
-		probability_corry_fails_final_value = numpy.mean([ufloat(_['probability_corry_fails'],_['probability_corry_fails error']) for i,_ in data.loc[dydx**2<22**2].iterrows()])
+		probability_corry_fails_final_value = ufloat(
+			numpy.mean([_['probability_corry_fails'] for i,_ in data.loc[dydx**2<22**2].iterrows()]),
+			numpy.mean([_['probability_corry_fails error'] for i,_ in data.loc[dydx**2<22**2].iterrows()]),
+		)
 		
 		utils.save_dataframe(
 			df = pandas.Series(
