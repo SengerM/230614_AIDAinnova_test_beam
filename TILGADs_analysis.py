@@ -26,7 +26,42 @@ def load_this_TILGAD_analysis_config(TI_LGAD_analysis:RunBureaucrat):
 	TB_campaign = TB_batch.parent
 	analysis_config = load_analyses_config()
 	return analysis_config.loc[(TB_campaign.run_name,TB_batch.run_name,TI_LGAD_analysis.run_name)]
-	
+
+def draw_pixel(fig, x0, y0, x1, y1, **kwargs):
+	for line_color, line_width in [('black',2.5),('white',1)]:
+		fig.add_shape(
+			x0 = x0,
+			y0 = y0,
+			x1 = x1,
+			y1 = y1,
+			type = "rect",
+			line = dict(
+				color = line_color,
+				width = line_width,
+			),
+			**kwargs,
+		)
+
+def draw_2x2_DUT(fig, pixel_size, **kwargs):
+	for i in [0,1]:
+		for j in [0,1]:
+			draw_pixel(
+				fig = fig,
+				x0 = pixel_size*j - pixel_size,
+				y0 = pixel_size*i - pixel_size,
+				x1 = pixel_size*j,
+				y1 = pixel_size*i,
+				**kwargs,
+			)
+	draw_pixel(
+		fig = fig,
+		x0 = - pixel_size,
+		y0 = - pixel_size,
+		x1 = pixel_size,
+		y1 = pixel_size,
+		**kwargs,
+	)
+
 # Tasks ↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓↓
 
 def setup_TI_LGAD_analysis_within_batch(batch:RunBureaucrat, DUT_name:str)->RunBureaucrat:
@@ -283,16 +318,17 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 				'Py': 'y (m)',
 			},
 		)
-		for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
-			method(0)
-		if draw_square:
-			fig.add_shape(
-				type = "rect",
-				x0 = -250e-6, 
-				y0 = -250e-6, 
-				x1 = 250e-6, 
-				y1 = 250e-6,
-			)
+		# ~ for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
+			# ~ method(0)
+		# ~ if draw_square:
+			# ~ fig.add_shape(
+				# ~ type = "rect",
+				# ~ x0 = -250e-6, 
+				# ~ y0 = -250e-6, 
+				# ~ x1 = 250e-6, 
+				# ~ y1 = 250e-6,
+			# ~ )
+		draw_2x2_DUT(fig, pixel_size=250e-6)
 		fig.update_yaxes(
 			scaleanchor = "x",
 			scaleratio = 1,
@@ -1447,7 +1483,7 @@ def efficiency_2D_statistics(efficiency_analysis:RunBureaucrat):
 			)
 		
 		PIXEL_SIZE = 250e-6
-		draw_DUT(fig, pixel_size=PIXEL_SIZE,)
+		draw_2x2_DUT(fig, pixel_size=PIXEL_SIZE)
 		
 		fig.add_shape(
 			type = "rect",
