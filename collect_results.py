@@ -6,6 +6,7 @@ from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/Senger
 import pandas
 import logging
 import plotly.express as px
+import utils
 
 def read_TI_LGADs_devices_sheet():
 	logging.info('Reading TI-LGADs devices sheet from the cloud...')
@@ -70,6 +71,84 @@ def collect_TI_LGAD_IPD(TB:RunBureaucrat, if_cant:str='skip'):
 			include_plotlyjs = 'cdn',
 		)
 
+def collect_TI_LGAD_effective_efficiency(TB:RunBureaucrat, if_cant:str='skip'):
+	data = []
+	
+	PLOTS_LABELS = {
+		'Fluence (neq/cm^-2×10^15)': 'Fluence (×10<sup>15</sup> n<sub>eq</sub> cm<sup>-2</sup>)',
+		'effective_efficiency (%)': 'Effective efficiency (%)',
+	}
+	
+	with TB.handle_task('collect_TI_LGAD_effective_efficiency') as employee:
+		TB.check_these_tasks_were_run_successfully('campaigns')
+		for campaign in TB.list_subruns_of_task('campaigns'):
+			for batch in campaign.list_subruns_of_task('batches'):
+				for TILGAD in batch.list_subruns_of_task('TI-LGADs_analyses'):
+					for efficiency_2D_analysis in TILGAD.list_subruns_of_task('efficiency_2D'):
+						if efficiency_2D_analysis.was_task_run_successfully('DUT_effective_efficiency'):
+							_ = pandas.read_pickle(efficiency_2D_analysis.path_to_directory_of_task('DUT_effective_efficiency')/'effective_efficiency.pickle')
+							_['DUT_name'] = TILGAD.run_name
+							_['batch'] = batch.run_name
+							_['campaign'] = campaign.run_name
+							_['coincidence_with_another_DUT'] = 'NoCoinc' not in efficiency_2D_analysis.run_name
+							_['analysis_name'] = efficiency_2D_analysis.run_name
+							_['measurement'] = str(efficiency_2D_analysis.pseudopath)
+							data.append(_)
+		data = pandas.DataFrame.from_records(data)
+		data.set_index(['campaign','batch','DUT_name','analysis_name'], inplace=True)
+		data.sort_index(inplace=True)
+		
+		# For those devices that have two measurements (one with and one without a coincidence with another DUT), I manually select the one with a coincidence:
+		KEEP_THESE = {
+			'TB/230614_June/batch_2_230V/TI143/EfctvEffNoCoinc',
+			'TB/230614_June/batch_2_230V/TI122/EfctvEffCoincTI116',
+			'TB/230614_June/batch_2_230V/TI123/EfctvEffNoCoinc',
+			'TB/230830_August/batch_3/TI145/EfctvEffCoincTI229',
+			'TB/230830_August/batch_3/TI146/EfctvEffCoincTI229',
+			'TB/230830_August/batch_3/TI229/EfctvEffCoincTI145',
+			'TB/230830_August/batch_3/TI230/EfctvEffNoCoinc',
+			'TB/230614_June/batch_2_230V/TI116/EfctvEffCoincTI122',
+		}
+		data = data.query(f'measurement in {list(KEEP_THESE)}')
+		
+		utils.save_dataframe(
+			data,
+			'effective_efficiency',
+			employee.path_to_directory_of_my_task,
+		)
+		
+		TI_LGADs_info = read_TI_LGADs_devices_sheet()
+		
+		data = data.join(TI_LGADs_info[['wafer','trench process','trench depth','trenches','pixel border','contact type','neutrons (neq/cm^2)']])
+		
+		for col in {'effective_efficiency','effective_efficiency_error'}:
+			data[f'{col} (%)'] = data[col]*100
+		
+		data['Fluence (neq/cm^-2×10^15)'] = data['neutrons (neq/cm^2)']*1e-15
+		
+		print(data)
+		print(sorted(list(data['measurement'])))
+		print(sorted(data))
+		
+		fig = px.line(
+			title = f'Effective efficiency in test beam',
+			data_frame = data.reset_index(drop=False).sort_values(['campaign','batch','pixel border','contact type','trenches','trench depth']),
+			facet_col = 'pixel border',
+			y = 'effective_efficiency (%)',
+			error_y = 'effective_efficiency_error (%)',
+			color = 'contact type',
+			facet_row = 'trenches',
+			x = 'Fluence (neq/cm^-2×10^15)',
+			symbol = 'contact type',
+			line_group = 'DUT_name',
+			hover_data = ['campaign','batch','DUT_name','wafer'],
+			labels = PLOTS_LABELS | utils.PLOTS_LABELS,
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'effective_efficiency.html',
+			include_plotlyjs = 'cdn',
+		)
+
 if __name__ == '__main__':
 	logging.basicConfig(
 		stream = sys.stderr, 
@@ -80,7 +159,7 @@ if __name__ == '__main__':
 	
 	set_my_template_as_default()
 	
-	collect_TI_LGAD_IPD(
+	collect_TI_LGAD_effective_efficiency(
 		RunBureaucrat(Path('../TB')),
 		# ~ if_cant = 'error',
 	)
