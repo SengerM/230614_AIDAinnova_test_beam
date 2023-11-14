@@ -1381,13 +1381,25 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 			include_plotlyjs = 'cdn',
 		)
 	
-def efficiency_2D_statistics(efficiency_analysis:RunBureaucrat):
+def DUT_effective_efficiency(efficiency_analysis:RunBureaucrat):
+	"""Computes the DUT effective efficiency from a 2D efficiency calculation
+	assuming the following holds:
+		- The bin size used for the 2D efficiency calculation is the same
+		size as the pixels (the pitch).
+	"""
+	FUNCTION_SPECIFIC_LABELS_FOR_PLOTS = {
+		'total_count': 'N events',
+		'efficiency (%)': 'Efficiency (%)',
+	}
 	efficiency_analysis.check_these_tasks_were_run_successfully('efficiency_2D')
 	if any([efficiency_analysis.was_task_run_successfully(_) for _ in {'this_is_a_TI-LGAD_analysis','this_is_an_RSD-LGAD_analysis'}]):
 		raise RuntimeError(f'`efficiency_analysis` is pointing to {efficiency_analysis.pseudopath} which looks like an analysis of a DUT rather than an efficiency analysis...')
 	
-	with efficiency_analysis.handle_task('efficiency_2D_statistics') as employee:
+	with efficiency_analysis.handle_task('DUT_effective_efficiency') as employee:
 		efficiency = pandas.read_pickle(efficiency_analysis.path_to_directory_of_task('efficiency_2D')/'efficiency.pickle')
+		
+		for col in {'efficiency','efficiency_error'}:
+			efficiency[f'{col} (%)'] = efficiency[col]*100
 		# ~ efficiency['efficiency_ufloat'] = efficiency[['efficiency','efficiency_error']].apply(lambda x: ufloat(x['efficiency'],x['efficiency_error']), axis=1)
 		
 		with open(efficiency_analysis.path_to_directory_of_task('efficiency_2D.config.json'), 'r') as ifile:
@@ -1395,45 +1407,60 @@ def efficiency_2D_statistics(efficiency_analysis:RunBureaucrat):
 		
 		# Define the ROI, only those bins that lie completely inside the DUT
 		PIXEL_SIZE = 250e-6
-		x_max =  PIXEL_SIZE - analysis_config['bin_size_x']
-		x_min = -PIXEL_SIZE + analysis_config['bin_size_x']
-		y_max =  PIXEL_SIZE - analysis_config['bin_size_y']
-		y_min = -PIXEL_SIZE + analysis_config['bin_size_y']
-		
-		for col in {'efficiency','efficiency_error'}:
-			efficiency.loc[efficiency['total_count']<=5, col] = float('NaN') # Remove data in those places where there is almost no data.
+		SAFETY_MARGIN_METERS = 22e-6
+		x_max =  PIXEL_SIZE - analysis_config['bin_size_x']/2 - analysis_config['x_step'] - SAFETY_MARGIN_METERS
+		x_min = -PIXEL_SIZE + analysis_config['bin_size_x']/2 + analysis_config['x_step'] + SAFETY_MARGIN_METERS
+		y_max =  PIXEL_SIZE - analysis_config['bin_size_y']/2 - analysis_config['y_step'] - SAFETY_MARGIN_METERS
+		y_min = -PIXEL_SIZE + analysis_config['bin_size_y']/2 + analysis_config['y_step'] + SAFETY_MARGIN_METERS
 		
 		efficiency['within_ROI'] = False
 		efficiency.loc[(efficiency['x']>x_min) & (efficiency['x']<x_max) & (efficiency['y']>y_min) & (efficiency['y']<y_max), 'within_ROI'] = True
+		efficiency = efficiency.sample(frac=1, replace=False).sort_values('within_ROI', ascending=False)
+		efficiency['Bin number'] = numpy.arange(len(efficiency)) # Assign a measurement number to each bin.
 		
-		# Calculate some statistics:
-		_ = efficiency.query('within_ROI==True').dropna()
-		_ = _.query(f'efficiency > {_["efficiency"].quantile(.1)}') # Drop some outliers.
-		efficiency_stats = _[['efficiency','total_count']].describe()
-		
-		utils.save_dataframe(
-			efficiency_stats,
-			name = 'efficiency_stats',
-			location = employee.path_to_directory_of_my_task,
+		# Compute effective efficiency:
+		effective_efficiency = ufloat(
+			efficiency.query('within_ROI==True')['efficiency'].mean(),
+			efficiency.query('within_ROI==True')['efficiency_error'].mean(),
+		)
+		# Plot each of the different measurements of the efficiency we have:
+		fig = px.scatter(
+			data_frame = efficiency.reset_index(drop=False),
+			x = 'Bin number',
+			y = 'efficiency (%)',
+			color = 'within_ROI',
+			error_y = 'efficiency_error (%)',
+			title = f'Effective efficiency<br><sup>{employee.pseudopath}</sup>',
+			hover_data = ['total_count'],
+			labels = utils.PLOTS_LABELS | FUNCTION_SPECIFIC_LABELS_FOR_PLOTS,
+		)
+		fig.add_hrect(
+			y0 = (effective_efficiency.nominal_value - effective_efficiency.std_dev)*100,
+			y1 = (effective_efficiency.nominal_value + effective_efficiency.std_dev)*100,
+			line_width = 0,
+			fillcolor = 'black', 
+			opacity = 0.2,
+		)
+		fig.add_hline(
+			y = effective_efficiency.nominal_value*100,
+			line_color = 'black',
+			annotation = dict(
+				text = f'{effective_efficiency*100} %'.replace('+/-','±'),
+				font_color = 'white',
+				bgcolor = 'rgba(0,0,0,.8)',
+			),
+			annotation_position = 'top left',
+		)
+		fig.write_html(
+			employee.path_to_directory_of_my_task/'effective_efficiency.html',
+			include_plotlyjs = 'cdn',
 		)
 		
-		for col in ['efficiency','total_count','detected_count']:
-			fig = px.ecdf(
-				data_frame = efficiency.query('within_ROI == True'),
-				title = f'{col} distribution inside DUT ROI<br><sup>{employee.pseudopath}</sup>',
-				x = col,
-				marginal = 'histogram',
-				hover_data = ['total_count'],
-			)
-			fig.write_html(
-				employee.path_to_directory_of_my_task/f'{col} distribution.html',
-				include_plotlyjs = 'cdn',
-			)
-		
 		# Heatmap with the efficiency:
+		df = efficiency
 		fig = px.imshow(
-			efficiency.set_index(['x','y']).unstack('x')['efficiency']*100,
-			range_color = (0,100),
+			df.set_index(['x','y']).unstack('x')['efficiency (%)'],
+			# ~ range_color = (0,100),
 			title = f'efficiency vs position<br><sup>{employee.pseudopath}</sup>',
 			labels = {
 				'x': 'x (m)',
@@ -1442,45 +1469,21 @@ def efficiency_2D_statistics(efficiency_analysis:RunBureaucrat):
 			aspect = 'equal',
 			origin = 'lower',
 		)
+		hover_text_data = df.set_index(['within_ROI','x','y'], append=True).apply(lambda x: f'Bin number: {x["Bin number"]:.0f}<br>Efficiency: {ufloat(x["efficiency (%)"],x["efficiency_error (%)"])} %<br>N events: {x["total_count"]:.0f}'.replace('+/-',' ± '), axis=1)
+		hover_text_data.name = 'text_for_plot'
+		hover_text_data = hover_text_data.to_frame().reset_index()
+		fig.update(
+			data = [
+				{
+					'customdata': hover_text_data.set_index(['x','y']).unstack('x')['text_for_plot'],
+					'hovertemplate': '%{customdata}<br>Bin x: %{x}<br>Bin y: %{y}',
+				}
+			]
+		)
 		fig.update_layout(
 			coloraxis_colorbar_title_text = 'Efficiency (%)',
 		)
 		fig.update_coloraxes(colorbar_title_side='right')
-		
-		def draw_pixel(fig, x0, y0, x1, y1, **kwargs):
-			for line_color, line_width in [('black',2.5),('white',1)]:
-				fig.add_shape(
-					x0 = x0,
-					y0 = y0,
-					x1 = x1,
-					y1 = y1,
-					type = "rect",
-					line = dict(
-						color = line_color,
-						width = line_width,
-					),
-					**kwargs,
-				)
-		
-		def draw_DUT(fig, pixel_size, **kwargs):
-			for i in [0,1]:
-				for j in [0,1]:
-					draw_pixel(
-						fig = fig,
-						x0 = pixel_size*j - pixel_size,
-						y0 = pixel_size*i - pixel_size,
-						x1 = pixel_size*j,
-						y1 = pixel_size*i,
-						**kwargs,
-					)
-			draw_pixel(
-				fig = fig,
-				x0 = - pixel_size,
-				y0 = - pixel_size,
-				x1 = pixel_size,
-				y1 = pixel_size,
-				**kwargs,
-			)
 		
 		PIXEL_SIZE = 250e-6
 		draw_2x2_DUT(fig, pixel_size=PIXEL_SIZE)
@@ -1496,14 +1499,14 @@ def efficiency_2D_statistics(efficiency_analysis:RunBureaucrat):
 				dash = 'dash',
 			),
 		)
-		fig.add_annotation(
-			x = PIXEL_SIZE*.1,
-			y = y_max,
-			text = f'Efficiency = {ufloat(efficiency_stats.loc["mean","efficiency"], efficiency_stats.loc["std","efficiency"])*100} %'.replace('+/-','±'),
-			bgcolor = 'white',
-			arrowcolor = 'black',
-			bordercolor = 'black',
-		)
+		# ~ fig.add_annotation(
+			# ~ x = PIXEL_SIZE*.1,
+			# ~ y = y_max,
+			# ~ text = f'Efficiency = {ufloat(efficiency_stats.loc["mean","efficiency"], efficiency_stats.loc["std","efficiency"])*100} %'.replace('+/-','±'),
+			# ~ bgcolor = 'white',
+			# ~ arrowcolor = 'black',
+			# ~ bordercolor = 'black',
+		# ~ )
 		fig.write_html(
 			employee.path_to_directory_of_my_task/f'efficiency_vs_position.html',
 			include_plotlyjs = 'cdn',
@@ -1681,7 +1684,7 @@ def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=Fals
 		efficiency_analysis = employee.boss,
 		min_counts_cutoff = 5,
 	)
-	efficiency_2D_statistics(
+	DUT_effective_efficiency(
 		efficiency_analysis = employee.boss,
 	)
 
