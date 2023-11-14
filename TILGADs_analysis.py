@@ -1684,9 +1684,10 @@ def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=Fals
 		efficiency_analysis = employee.boss,
 		min_counts_cutoff = 5,
 	)
-	DUT_effective_efficiency(
-		efficiency_analysis = employee.boss,
-	)
+	if 'EfctvEff' in employee.run_name: # This means it is interesting to run the DUT effective efficiency calculation, because the parameters should be accordingly set for this.
+		DUT_effective_efficiency(
+			efficiency_analysis = employee.boss,
+		)
 
 def run_all_efficiency_2D(DUT_analysis:RunBureaucrat, force:bool=False):
 	"""Runs all `efficiency_2D` analyses defined in
