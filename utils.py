@@ -12,6 +12,7 @@ PLOTS_LABELS = {
 	'DUT_name_rowcol': 'DUT (i,j)',
 	'Px': 'x (m)',
 	'Py': 'y (m)',
+	'cluster_size': 'Cluster size',
 }
 
 def save_dataframe(df, name:str, location:Path):

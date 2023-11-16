@@ -185,24 +185,38 @@ def plot_tracks_and_hits(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 			include_plotlyjs = 'cdn',
 		)
 
-def plot_cluster_size(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
-	TI_LGAD_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
+def plot_cluster_size(DUT_analysis:RunBureaucrat, force:bool=False):
+	DUT_analysis.check_these_tasks_were_run_successfully('this_is_a_TI-LGAD_analysis')
 	TASK_NAME = 'plot_cluster_size'
 	
-	if force==False and TI_LGAD_analysis.was_task_run_successfully(TASK_NAME):
+	if force==False and DUT_analysis.was_task_run_successfully(TASK_NAME):
 		return
 	
-	with TI_LGAD_analysis.handle_task(TASK_NAME) as employee:
-		analysis_config = load_this_TILGAD_analysis_config(TI_LGAD_analysis)
-		setup_config = utils_batch_level.load_setup_configuration_info(TI_LGAD_analysis.parent)
+	with DUT_analysis.handle_task(TASK_NAME) as employee:
+		analysis_config = load_this_TILGAD_analysis_config(DUT_analysis)
+		setup_config = utils_batch_level.load_setup_configuration_info(DUT_analysis.parent)
+		transformation_parameters = get_transformation_parameters(DUT_analysis)
 		
-		tracks = utils_batch_level.load_tracks(TI_LGAD_analysis.parent, only_multiplicity_one=True)
-		tracks = tracks.join(tracks_utils.project_tracks(tracks, z=analysis_config['DUT_z_position']))
+		tracks = utils_batch_level.load_tracks(DUT_analysis.parent, only_multiplicity_one=True)
+		
+		DUT_z_position = list(set(setup_config.query(f'DUT_name == "{DUT_analysis.run_name}"')['z (m)']))
+		if len(DUT_z_position) != 1: # This should never happen, but just in case it is better to be prepared.
+			raise RuntimeError(f'Cannot determine DUT z position for {DUT_analysis.pseudopath}. ')
+		else:
+			DUT_z_position = DUT_z_position[0]
+		tracks = tracks.join(tracks_utils.project_tracks(tracks, z=DUT_z_position))
+		
+		tracks[['Px','Py']] = translate_and_then_rotate(
+			points = tracks[['Px','Py']].rename(columns=dict(Px='x',Py='y')),
+			x_translation = transformation_parameters['x_translation'],
+			y_translation = transformation_parameters['y_translation'],
+			angle_rotation = transformation_parameters['rotation_around_z_deg']/180*numpy.pi,
+		)
 		
 		hit_criterion = f"100e-9<`t_50 (s)` AND `t_50 (s)`<150e-9 AND `Time over 50% (s)`>1e-9 AND `Amplitude (V)`<{analysis_config['Amplitude threshold (V)']}"
 		hits = utils_batch_level.load_hits(
-			TB_batch = TI_LGAD_analysis.parent,
-			DUTs_and_hit_criterions = {DUT_name_rowcol:hit_criterion for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
+			TB_batch = DUT_analysis.parent,
+			DUTs_and_hit_criterions = {DUT_name_rowcol:hit_criterion for DUT_name_rowcol in set(setup_config.query(f'DUT_name=="{DUT_analysis.run_name}"')['DUT_name_rowcol'])},
 		)
 		
 		cluster_size = hits.sum(axis=1)
@@ -212,18 +226,30 @@ def plot_cluster_size(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 		tracks['cluster_size'].fillna(0, inplace=True)
 		tracks['cluster_size'] = tracks['cluster_size'].astype(int)
 		
+		PIXEL_SIZE = 250e-6
+		
+		tracks = tracks.query(f'Px>{-PIXEL_SIZE} and Px<{PIXEL_SIZE} and Py>{-PIXEL_SIZE} and Py<{PIXEL_SIZE}') # Filter by DUT ROI.
+		
+		cluster_size = tracks.groupby('cluster_size').count()['is_fitted']
+		cluster_size.name = 'cluster_size'
+		utils.save_dataframe(
+			cluster_size,
+			name = 'cluster_size',
+			location = employee.path_to_directory_of_my_task,
+		)
+		
+		tracks = tracks.query('cluster_size>0') # Keep only hits.
+		
 		fig = px.scatter(
 			data_frame = tracks.reset_index().sort_values('cluster_size').astype({'cluster_size':str}),
-			title = f'Cluster size<br><sup>{TI_LGAD_analysis.pseudopath}, amplitude < {analysis_config["Amplitude threshold (V)"]*1e3:.1f} mV</sup>',
+			title = f'Cluster size<br><sup>{DUT_analysis.pseudopath}, amplitude < {analysis_config["Amplitude threshold (V)"]*1e3:.1f} mV</sup>',
 			x = 'Px',
 			y = 'Py',
 			color = 'cluster_size',
 			hover_data = ['n_run','n_event'],
-			labels = {
-				'Px': 'x (m)',
-				'Py': 'y (m)',
-			},
+			labels = utils.PLOTS_LABELS,
 		)
+		draw_2x2_DUT(fig, PIXEL_SIZE)
 		fig.update_yaxes(
 			scaleanchor = "x",
 			scaleratio = 1,
@@ -236,8 +262,9 @@ def plot_cluster_size(TI_LGAD_analysis:RunBureaucrat, force:bool=False):
 		fig = px.histogram(
 			tracks,
 			x =  'cluster_size',
-			title = f'Cluster size<br><sup>{TI_LGAD_analysis.pseudopath}, amplitude < {analysis_config["Amplitude threshold (V)"]*1e3:.1f} mV</sup>',
+			title = f'Cluster size<br><sup>{DUT_analysis.pseudopath}, amplitude < {analysis_config["Amplitude threshold (V)"]*1e3:.1f} mV</sup>',
 			text_auto = True,
+			labels = utils.PLOTS_LABELS,
 		)
 		fig.update_yaxes(type="log")
 		fig.write_html(
