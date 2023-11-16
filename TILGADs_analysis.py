@@ -2054,7 +2054,7 @@ def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=Fals
 								'y': y,
 								'n_y': ny,
 								'efficiency': e,
-								'efficiency_error': (e*abs(1-e)/N)**.5,
+								'efficiency_error': (e*abs(1-e)/N)**.5 if N != 0 else float('NaN'),
 								'detected_count': int(detected_count.nominal_value),
 								'total_count': N,
 							}
