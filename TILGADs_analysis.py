@@ -1067,6 +1067,7 @@ def efficiency_vs_distance_left_right_folding(DUT_analysis:RunBureaucrat, analys
 					angle_rotation = angle_rotation/180*numpy.pi,
 				)
 				
+				this_case_tracks['pixel_hit'] = 'none' # Initialize.
 				for leftright, pixel_name_rowcol in {'left': left_pixel_name_rowcol, 'right': right_pixel_name_rowcol}.items():
 					this_case_hits = DUT_hits[pixel_name_rowcol]
 					this_case_tracks = this_case_tracks.join(this_case_hits)
@@ -1077,20 +1078,55 @@ def efficiency_vs_distance_left_right_folding(DUT_analysis:RunBureaucrat, analys
 				
 				tracks_for_efficiency_calculation.append(this_case_tracks)
 			tracks_for_efficiency_calculation = pandas.concat(tracks_for_efficiency_calculation)
+			tracks_for_efficiency_calculation = tracks_for_efficiency_calculation[~tracks_for_efficiency_calculation.index.duplicated(keep='first')]
 			
-			fig = px.scatter(
-				data_frame = tracks_for_efficiency_calculation,
-				title = f'Tracks used in efficiency calculation<br><sup>{employee.pseudopath}</sup>',
-				x = 'Px_folded',
-				y = 'Py_folded',
-				color = 'pixel_hit',
-				facet_row = 'pixels_group',
-			)
-			fig.write_html(
-				employee.path_to_directory_of_my_task/'tracks_used_in_efficiency_calculation.html',
-				include_plotlyjs = 'cdn',
-			)
+			# Do some plots with the tracks used in the efficiency:
+			if True:
+				fig = px.scatter(
+					data_frame = tracks_for_efficiency_calculation.reset_index(drop=False),
+					title = f'Tracks used in efficiency calculation<br><sup>{employee.pseudopath}</sup>',
+					x = 'Px_folded',
+					y = 'Py_folded',
+					color = 'pixel_hit',
+					facet_row = 'pixels_group',
+					hover_data = ['n_run','n_event'],
+					labels = utils.PLOTS_LABELS | THIS_FUNCTION_PLOTS_LABELS,
+					color_discrete_map = THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT,
+				)
+				fig.update_yaxes(
+					scaleanchor = "x",
+					scaleratio = 1,
+				)
+				fig.write_html(
+					employee.path_to_directory_of_my_task/'tracks_used_in_efficiency_calculation_after_folding.html',
+					include_plotlyjs = 'cdn',
+				)
+				
+				fig = px.scatter(
+					data_frame = tracks_for_efficiency_calculation.reset_index(drop=False),
+					title = f'Tracks used in efficiency calculation<br><sup>{employee.pseudopath}</sup>',
+					x = 'Px',
+					y = 'Py',
+					color = 'pixel_hit',
+					symbol = 'pixels_group',
+					hover_data = ['n_run','n_event'],
+					labels = utils.PLOTS_LABELS | THIS_FUNCTION_PLOTS_LABELS,
+					color_discrete_map = THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT,
+				)
+				draw_2x2_DUT(
+					fig,
+					pixel_size = analysis_config['pixel_size'],
+				)
+				fig.update_yaxes(
+					scaleanchor = "x",
+					scaleratio = 1,
+				)
+				fig.write_html(
+					employee.path_to_directory_of_my_task/'tracks_used_in_efficiency_calculation_without_folding.html',
+					include_plotlyjs = 'cdn',
+				)
 			
+			# Now calculate the efficiency:
 			distance_axis = numpy.arange(
 				start = -analysis_config['pixel_size'] - analysis_config['ROI_distance_offset_from_pixel_border'],
 				stop = analysis_config['pixel_size'] + analysis_config['ROI_distance_offset_from_pixel_border'],
@@ -1102,10 +1138,13 @@ def efficiency_vs_distance_left_right_folding(DUT_analysis:RunBureaucrat, analys
 			for leftright in ['left','right','both']:
 				with warnings.catch_warnings():
 					warnings.simplefilter("ignore")
-					hits_query = f'pixel_hit in ["left","right"]' if leftright == 'both' else f'pixel_hit == "{leftright}"'
+					if leftright in {'left','right'}:
+						DUT_hits = tracks_for_efficiency_calculation.query(f'{leftright} == True').index
+					elif leftright == 'both':
+						DUT_hits = tracks_for_efficiency_calculation.query(f'left == True or right == True').index
 					efficiency_calculation_args = dict(
 						tracks = tracks_for_efficiency_calculation.rename(columns={'Px_folded':'x', 'Py_folded':'y'})[['x','y']],
-						DUT_hits = tracks_for_efficiency_calculation.query(hits_query).index,
+						DUT_hits = DUT_hits,
 						project_on = 'x',
 						distances = distance_axis,
 						window_size = analysis_config['bin_size'],
@@ -1114,7 +1153,7 @@ def efficiency_vs_distance_left_right_folding(DUT_analysis:RunBureaucrat, analys
 					error_minus, error_plus = efficiency_vs_1D_distance_rolling_error_estimation(
 						**efficiency_calculation_args,
 						number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty = number_of_noHitTrack_that_are_fake_per_unit_area.std_dev,
-						n_bootstraps = 3,
+						n_bootstraps = 33,
 						confidence_level = .99,
 					)
 				df = pandas.DataFrame(
@@ -1148,6 +1187,14 @@ def efficiency_vs_distance_left_right_folding(DUT_analysis:RunBureaucrat, analys
 				error_y_mode = 'bands',
 				color_discrete_map = THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT,
 			)
+			SAFETY_ROI_MARGIN = 33e-6
+			for x in [-analysis_config['pixel_size'] + analysis_config['bin_size'] + SAFETY_ROI_MARGIN, analysis_config['pixel_size'] - analysis_config['bin_size'] - SAFETY_ROI_MARGIN]:
+				fig.add_vline(
+					x = x,
+					opacity = 0.5,
+					line_width = 1,
+					line_dash = 'dash',
+				)
 			fig.write_html(
 				employee.path_to_directory_of_my_task/'efficiency_vs_distance.html',
 				include_plotlyjs = 'cdn',
