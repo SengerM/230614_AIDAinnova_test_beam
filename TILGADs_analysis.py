@@ -547,26 +547,35 @@ def efficiency_vs_1D_distance_rolling(tracks:pandas.DataFrame, DUT_hits, project
 	for i,d in enumerate(distances):
 		total_tracks_count[i] = len(tracks.query(f'{d-window_size/2}<={project_on} and {project_on}<{d+window_size/2}'))
 		DUT_hits_count[i] = len(utils.select_by_multiindex(tracks, DUT_hits).query(f'{d-window_size/2}<={project_on} and {project_on}<{d+window_size/2}'))
-	return DUT_hits_count/(total_tracks_count-number_of_noHitTrack_that_are_fake_per_window)
+	return DUT_hits_count/(total_tracks_count-number_of_noHitTrack_that_are_fake_per_window), total_tracks_count
 
 def efficiency_vs_1D_distance_rolling_error_estimation(tracks:pandas.DataFrame, DUT_hits, project_on:str, distances:numpy.array, window_size:float, number_of_noHitTrack_that_are_fake_per_unit_area:float, number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty:float, n_bootstraps:int=99, confidence_level:float=.68):
-	replicas = []
-	for n_bootstrap in range(n_bootstraps):
-		efficiency = efficiency_vs_1D_distance_rolling(
-			tracks = tracks.sample(frac=1, replace=True),
-			DUT_hits = DUT_hits,
-			project_on = project_on,
-			distances = distances,
-			window_size = window_size,
-			number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area + numpy.random.randn()*number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty,
-		)
-		replicas.append(efficiency)
-	replicas = numpy.array(replicas)
-	value = numpy.quantile(replicas, q=.5, axis=0, method='interpolated_inverted_cdf')
-	error_up = numpy.quantile(replicas, q=.5+confidence_level/2, axis=0, method='interpolated_inverted_cdf') - value
-	error_down = value - numpy.quantile(replicas, q=.5-confidence_level/2, axis=0, method='interpolated_inverted_cdf')
+	# ~ replicas = []
+	# ~ for n_bootstrap in range(n_bootstraps):
+		# ~ efficiency = efficiency_vs_1D_distance_rolling(
+			# ~ tracks = tracks.sample(frac=1, replace=True),
+			# ~ DUT_hits = DUT_hits,
+			# ~ project_on = project_on,
+			# ~ distances = distances,
+			# ~ window_size = window_size,
+			# ~ number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area + numpy.random.randn()*number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty,
+		# ~ )
+		# ~ replicas.append(efficiency)
+	# ~ replicas = numpy.array(replicas)
+	# ~ value = numpy.quantile(replicas, q=.5, axis=0, method='interpolated_inverted_cdf')
+	# ~ error_up = numpy.quantile(replicas, q=.5+confidence_level/2, axis=0, method='interpolated_inverted_cdf') - value
+	# ~ error_down = value - numpy.quantile(replicas, q=.5-confidence_level/2, axis=0, method='interpolated_inverted_cdf')
 	
-	return error_down, error_up
+	E, N = efficiency_vs_1D_distance_rolling(
+		tracks = tracks,
+		DUT_hits = DUT_hits,
+		project_on = project_on,
+		distances = distances,
+		window_size = window_size,
+		number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area,
+	)
+	erorr = (E*abs(1-E)/N)**.5
+	return erorr, erorr
 
 def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=False):
 	"""Calculates the efficiency vs distance using a left and a right pixel,
@@ -824,10 +833,11 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 						n_bootstraps = 33,
 						confidence_level = .99,
 					)
+				e, _ = efficiency_vs_1D_distance_rolling(**efficiency_calculation_args)
 				df = pandas.DataFrame(
 					{
 						'Distance (m)': distance_axis,
-						'Efficiency': efficiency_vs_1D_distance_rolling(**efficiency_calculation_args),
+						'Efficiency': e,
 						'Efficiency error_-': error_minus,
 						'Efficiency error_+': error_plus,
 					}
@@ -855,6 +865,7 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 				error_y_mode = 'bands',
 				color_discrete_map = THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT,
 			)
+			SAFETY_ROI_MARGIN = 22e-6
 			for x in [-analysis_config['pixel_size'] + analysis_config['bin_size'] + SAFETY_ROI_MARGIN, analysis_config['pixel_size'] - analysis_config['bin_size'] - SAFETY_ROI_MARGIN]:
 				fig.add_vline(
 					x = x,
@@ -2009,16 +2020,18 @@ def efficiency_2D(DUT_analysis:RunBureaucrat, analysis_name:str, force:bool=Fals
 						except ZeroDivisionError:
 							efficiency_here = ufloat(float('NaN'), float('NaN'))
 						
+						e = efficiency_here.nominal_value # Efficiency value.
+						N = int(total_count.nominal_value) # Total number of events.
 						efficiency.append(
 							{
 								'x': x,
 								'n_x': nx,
 								'y': y,
 								'n_y': ny,
-								'efficiency': efficiency_here.nominal_value,
-								'efficiency_error': efficiency_here.std_dev,
+								'efficiency': e,
+								'efficiency_error': (e*abs(1-e)/N)**.5,
 								'detected_count': int(detected_count.nominal_value),
-								'total_count': int(total_count.nominal_value),
+								'total_count': N,
 							}
 						)
 				return pandas.DataFrame.from_records(efficiency).set_index(['n_x','n_y'])
