@@ -126,9 +126,10 @@ def plot_DUT_distributions(TI_LGAD_analysis:RunBureaucrat, force:bool=False, max
 			logging.info(f'Plotting {y} vs {x} scatter_plot...')
 			data = utils_batch_level.load_parsed_from_waveforms(
 				TB_batch = TI_LGAD_analysis.parent,
-				load_this = {DUT_name_rowcol: None for DUT_name_rowcol in set(setup_config.query(f'DUT_name == "{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
+				load_this = {DUT_name_rowcol: '`Time over 50% (s)`>1e-9' for DUT_name_rowcol in set(setup_config.query(f'DUT_name == "{TI_LGAD_analysis.run_name}"')['DUT_name_rowcol'])},
 				variables = [x,y],
 			)
+			maximum_number_of_events_per_plot = 9999
 			data = data.sample(maximum_number_of_events_per_plot) if len(data) > maximum_number_of_events_per_plot else data
 			fig = px.scatter(
 				data.sort_values('DUT_name_rowcol').reset_index(drop=False),
@@ -340,10 +341,7 @@ def transformation_for_centering_and_leveling(TI_LGAD_analysis:RunBureaucrat, dr
 			y = 'Py',
 			color = 'DUT_name_rowcol',
 			hover_data = ['n_run','n_event'],
-			labels = {
-				'Px': 'x (m)',
-				'Py': 'y (m)',
-			},
+			labels = utils.PLOTS_LABELS,
 		)
 		# ~ for xy,method in dict(x=fig.add_vline, y=fig.add_hline).items():
 			# ~ method(0)
