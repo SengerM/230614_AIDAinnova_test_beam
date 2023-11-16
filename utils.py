@@ -13,6 +13,10 @@ PLOTS_LABELS = {
 	'Px': 'x (m)',
 	'Py': 'y (m)',
 	'cluster_size': 'Cluster size',
+	'efficiency': 'Efficiency',
+	'efficiency (%)': 'Efficiency (%)',
+	'efficiency_error': 'Efficiency error',
+	'efficiency_error (%)': 'Efficiency error (%)',
 }
 
 def save_dataframe(df, name:str, location:Path):

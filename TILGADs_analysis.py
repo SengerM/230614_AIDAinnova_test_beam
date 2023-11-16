@@ -1191,18 +1191,19 @@ def efficiency_vs_distance_left_right_folding(DUT_analysis:RunBureaucrat, analys
 						project_on = 'x',
 						distances = distance_axis,
 						window_size = analysis_config['bin_size'],
-						number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area.nominal_value,
+						number_of_noHitTrack_that_are_fake_per_unit_area = number_of_noHitTrack_that_are_fake_per_unit_area.nominal_value*len(analysis_config['pairs_of_pixels_to_use']),
 					)
 					error_minus, error_plus = efficiency_vs_1D_distance_rolling_error_estimation(
 						**efficiency_calculation_args,
-						number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty = number_of_noHitTrack_that_are_fake_per_unit_area.std_dev,
+						number_of_noHitTrack_that_are_fake_per_unit_area_uncertainty = number_of_noHitTrack_that_are_fake_per_unit_area.std_dev*len(analysis_config['pairs_of_pixels_to_use']),
 						n_bootstraps = 33,
 						confidence_level = .99,
 					)
+				eff, _ = efficiency_vs_1D_distance_rolling(**efficiency_calculation_args)
 				df = pandas.DataFrame(
 					{
 						'Distance (m)': distance_axis,
-						'Efficiency': efficiency_vs_1D_distance_rolling(**efficiency_calculation_args),
+						'Efficiency': eff,
 						'Efficiency error_-': error_minus,
 						'Efficiency error_+': error_plus,
 					}
@@ -1685,43 +1686,64 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 	if any([efficiency_analysis.was_task_run_successfully(_) for _ in {'this_is_a_TI-LGAD_analysis','this_is_an_RSD-LGAD_analysis'}]):
 		raise RuntimeError(f'`efficiency_analysis` is pointing to {efficiency_analysis.pseudopath} which looks like an analysis of a DUT rather than an efficiency analysis...')
 	
+	with open(efficiency_analysis.path_to_run_directory/'efficiency_2D.config.json', 'r') as ifile:
+		analysis_config = json.load(ifile)
+	
+	PIXEL_SIZE = 250e-6 # Hardcoded, have no time to do it properly right now...
+	SAFETY_MARGIN = 22e-6 # To account for possible misalignments.
+	ROI_xmin = -PIXEL_SIZE + analysis_config['bin_size_x']/2 + analysis_config['x_step']/2 + SAFETY_MARGIN
+	ROI_xmax = PIXEL_SIZE - analysis_config['bin_size_x']/2 - analysis_config['x_step']/2 - SAFETY_MARGIN
+	ROI_ymin = -PIXEL_SIZE + analysis_config['bin_size_y']/2 + analysis_config['y_step']/2 + SAFETY_MARGIN
+	ROI_ymax = PIXEL_SIZE - analysis_config['bin_size_y']/2 - analysis_config['y_step']/2 - SAFETY_MARGIN
+	
 	efficiency = pandas.read_pickle(efficiency_analysis.path_to_directory_of_task('efficiency_2D')/'efficiency.pickle')
 	
+	efficiency_error = efficiency['efficiency_error'].copy()
 	for col in {'efficiency','efficiency_error'}:
-		efficiency.loc[efficiency['total_count']<=min_counts_cutoff, col] = float('NaN') # Remove data in those places where there is almost no data.
+		efficiency.loc[(efficiency['total_count']<=min_counts_cutoff) | (efficiency_error>.1), col] = float('NaN') # Remove data in those places where there is almost no data.
+		efficiency[f'{col} (%)'] = efficiency[col]*100
 	
 	with efficiency_analysis.handle_task('plot_efficiency_vs_position') as employee:
-		for col in {'efficiency','efficiency_error','detected_count','total_count'}:
-			fig = px.imshow(
-				efficiency.set_index(['x','y']).unstack('x')[col],
-				title = f'{col} vs position<br><sup>{employee.pseudopath}</sup>',
-				labels = {
-					'x': 'x (m)',
-					'y': 'y (m)',
-				},
-				aspect = 'equal',
-				origin = 'lower',
-			)
-			fig.update_layout(
-				coloraxis_colorbar_title_text = col,
-			)
-			fig.update_coloraxes(colorbar_title_side='right')
-			for line_color, line_width in [('black',2.5),('white',1)]:
-				fig.add_shape(
-					type = "rect",
-					x0 = -250e-6, 
-					y0 = -250e-6, 
-					x1 = 250e-6, 
-					y1 = 250e-6,
-					line = dict(
-						color = line_color,
-						width = line_width,
-					),
+		for within_ROI in {True,False}:
+			if within_ROI:
+				data_for_plots = efficiency.query(f'x>{ROI_xmin} and x<{ROI_xmax} and y>{ROI_ymin} and y<{ROI_ymax}')
+			else:
+				data_for_plots = efficiency
+			for col in {'efficiency (%)','efficiency_error (%)','detected_count','total_count'}:
+				fig = px.imshow(
+					data_for_plots.set_index(['x','y']).unstack('x')[col],
+					title = f'{col} vs position<br><sup>{employee.pseudopath}</sup>',
+					labels = utils.PLOTS_LABELS | {
+						'x': 'x (m)',
+						'y': 'y (m)',
+					},
+					aspect = 'equal',
+					origin = 'lower',
+					# ~ text_auto = True,
+					range_color = (0,100) if col == 'efficiency (%)' else None,
 				)
-			fig.write_html(
-				employee.path_to_directory_of_my_task/f'{col}_vs_position.html',
-				include_plotlyjs = 'cdn',
-			)
+				fig.update_layout(
+					coloraxis_colorbar_title_text = col,
+				)
+				fig.update_coloraxes(colorbar_title_side='right')
+				draw_2x2_DUT(fig, 250e-6)
+				if within_ROI == False:
+					# Draw the ROI so we can have an idea of which data is worthy:
+					fig.add_shape(
+						x0 = ROI_xmin,
+						y0 = ROI_ymin,
+						x1 = ROI_xmax,
+						y1 = ROI_ymax,
+						type = "rect",
+						line = dict(
+							color = 'black',
+							dash = 'dash',
+						),
+					)
+				fig.write_html(
+					employee.path_to_directory_of_my_task/f'{col}_vs_position_within_ROI_{within_ROI}.html',
+					include_plotlyjs = 'cdn',
+				)
 		
 		# Efficiency in cuadratic scale, to better see details close to 1:
 		power = 4
@@ -1747,18 +1769,7 @@ def plot_efficiency_2D(efficiency_analysis:RunBureaucrat, min_counts_cutoff:int)
 			),
 		)
 		fig.update_coloraxes(colorbar_title_side='right')
-		for line_color, line_width in [('black',2.5),('white',1)]:
-			fig.add_shape(
-				type = "rect",
-				x0 = -250e-6, 
-				y0 = -250e-6, 
-				x1 = 250e-6, 
-				y1 = 250e-6,
-				line = dict(
-					color = line_color,
-					width = line_width,
-				),
-			)
+		draw_2x2_DUT(fig, 250e-6)
 		fig.write_html(
 			employee.path_to_directory_of_my_task/f'efficiency_vs_position_nonlinear_scale.html',
 			include_plotlyjs = 'cdn',
