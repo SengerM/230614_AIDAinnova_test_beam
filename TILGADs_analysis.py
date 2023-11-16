@@ -855,6 +855,13 @@ def efficiency_vs_distance_left_right(DUT_analysis:RunBureaucrat, analysis_name:
 				error_y_mode = 'bands',
 				color_discrete_map = THIS_FUNCTION_COLOR_DISCRETE_MAP_FOR_PIXEL_HIT,
 			)
+			for x in [-analysis_config['pixel_size'] + analysis_config['bin_size'] + SAFETY_ROI_MARGIN, analysis_config['pixel_size'] - analysis_config['bin_size'] - SAFETY_ROI_MARGIN]:
+				fig.add_vline(
+					x = x,
+					opacity = 0.5,
+					line_width = 1,
+					line_dash = 'dash',
+				)
 			fig.write_html(
 				employee.path_to_directory_of_my_task/'efficiency_vs_distance.html',
 				include_plotlyjs = 'cdn',
