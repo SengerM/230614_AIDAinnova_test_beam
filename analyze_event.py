@@ -6,7 +6,7 @@ import pandas
 from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
 import plotly.graph_objects as go
 import logging
-import utils
+import utils_batch_level
 from parse_waveforms import plot_waveform
 import dominate # https://github.com/Knio/dominate
 
@@ -48,7 +48,7 @@ def plot_event_waveforms(bureaucrat:RunBureaucrat):
 	if len(indices_where_to_look_for) == 0:
 		raise ValueError(f'n_event {n_event} not present in run number {n_run}. ')
 
-	signals_connections = utils.load_setup_configuration_info(bureaucrat.parent.parent)
+	signals_connections = utils_batch_level.load_setup_configuration_info(bureaucrat.parent.parent)
 	signals_connections.set_index(['CAEN_name','CAEN_n_channel'], inplace=True)
 
 	with bureaucrat.handle_task('plot_waveforms') as employee:
