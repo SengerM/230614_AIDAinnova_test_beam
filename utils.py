@@ -8,6 +8,8 @@ from contextlib import nullcontext
 from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
 import logging
 
+PATH_TO_WHEREVER_THE_DOCKER_DATA_IS_POINTING_TO = Path('/home/msenger/DESY_test_data')
+
 PLOTS_LABELS = {
 	'DUT_name_rowcol': 'DUT (i,j)',
 	'Px': 'x (m)',
@@ -172,7 +174,7 @@ def run_commands_in_docker_container(command, container_id:str, stdout=None, std
 		commands to be executed sequentially.
 	"""
 	timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S%f')
-	temp_file = Path(f'/media/msenger/230829_gray/AIDAinnova_test_beams/.{timestamp}_{numpy.random.rand()*1e9:.0f}.sh')
+	temp_file = PATH_TO_WHEREVER_THE_DOCKER_DATA_IS_POINTING_TO/f'.{timestamp}_{numpy.random.rand()*1e9:.0f}.sh'
 	if not isinstance(command, (str, list)):
 		raise TypeError(f'`command` must be a list or a string, received object of type {type(command)}')
 	if isinstance(command, str):
