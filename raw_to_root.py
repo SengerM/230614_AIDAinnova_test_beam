@@ -54,7 +54,7 @@ if __name__=='__main__':
 		help = 'Path to the base measurement directory.',
 		required = True,
 		dest = 'directory',
-		type = str,
+		type = Path,
 	)
 	parser.add_argument(
 		'--force',
@@ -72,10 +72,8 @@ if __name__=='__main__':
 	)
 	
 	args = parser.parse_args()
-	bureaucrat = RunBureaucrat(Path(args.directory))
-	utils.guess_where_how_to_run(
-		bureaucrat,
-		raw_to_root,
+	raw_to_root(
+		bureaucrat = RunBureaucrat(args.directory),
 		force = args.force,
 		container_id = args.container_id,
 		silent_root = True,
