@@ -83,7 +83,7 @@ def select_by_multiindex(df:pandas.DataFrame, idx:pandas.MultiIndex)->pandas.Dat
 def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, telegram_bot_reporter:SafeTelegramReporter4Loops=None):
 	"""Given a `raw_level_f` function that is intended to operate on a
 	`raw run`, i.e. a bureaucrat node containing one of the runs from
-	the TB (e.g. TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_230V/runs/subruns/run000937_230625134927)
+	the TB (e.g. TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_230V/EUDAQ_runs/subruns/run000937_230625134927)
 	this function will automatically iterate it over all the runs if `bureaucrat`
 	points to a batch (e.g. TB_data_analysis/campaigns/subruns/230614_June/batches/subruns/batch_2_230V), 
 	or will automatically iterate it over all batches and runs if `bureaucrat` 
@@ -100,9 +100,9 @@ def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, teleg
 		An optional bot to report the progress and any issues.
 	"""
 	def run_on_batch_runs(batch_bureaucrat:RunBureaucrat, raw_level_f:callable, telegram_bot_reporter:SafeTelegramReporter4Loops=None):
-		batch_bureaucrat.check_these_tasks_were_run_successfully('runs') # To ensure that we are on a "batch node".
+		batch_bureaucrat.check_these_tasks_were_run_successfully('EUDAQ_runs') # To ensure that we are on a "batch node".
 		
-		runs_to_be_processed = batch_bureaucrat.list_subruns_of_task('runs')
+		runs_to_be_processed = batch_bureaucrat.list_subruns_of_task('EUDAQ_runs')
 		
 		with telegram_bot_reporter.report_loop(
 			total_loop_iterations = len(runs_to_be_processed),
@@ -131,7 +131,7 @@ def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, teleg
 	
 	if bureaucrat.was_task_run_successfully('batches'):
 		run_on_TB_campaign_batches(bureaucrat, raw_level_f, telegram_bot_reporter=telegram_bot_reporter)
-	elif bureaucrat.was_task_run_successfully('runs'):
+	elif bureaucrat.was_task_run_successfully('EUDAQ_runs'):
 		run_on_batch_runs(bureaucrat, raw_level_f, telegram_bot_reporter=telegram_bot_reporter)
 	elif bureaucrat.was_task_run_successfully('raw'):
 		raw_level_f(bureaucrat)
@@ -141,7 +141,7 @@ def guess_where_how_to_run(bureaucrat:RunBureaucrat, raw_level_f:callable, teleg
 def which_kind_of_node(bureaucrat:RunBureaucrat):
 	if bureaucrat.was_task_run_successfully('batches'):
 		return 'campaign'
-	elif bureaucrat.was_task_run_successfully('runs'):
+	elif bureaucrat.was_task_run_successfully('EUDAQ_runs'):
 		return 'batch'
 	elif bureaucrat.was_task_run_successfully('raw'):
 		return 'run'
