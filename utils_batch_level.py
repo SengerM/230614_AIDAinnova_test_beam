@@ -68,11 +68,46 @@ def setup_batch_info(TB_batch:RunBureaucrat):
 			for name,df in {'planes_definition':planes_definition, 'pixels_definition':pixels_definition}.items():
 				utils.save_dataframe(df.query(f'batch_number=={n_batch}'), name, employee.path_to_directory_of_my_task)
 	
+	def setup_batch_info_240212_DESY_test_beam(TB_batch:RunBureaucrat):
+		TB_batch.check_these_tasks_were_run_successfully('runs') # So we are sure this is pointing to a batch
+		
+		with TB_batch.handle_task('batch_info') as employee:
+			n_batch = int(TB_batch.run_name.split('_')[1])
+			planes_definition = pandas.read_csv(
+				'https://docs.google.com/spreadsheets/d/e/2PACX-1vTSddEy02EJHBoeyBsh44eupHMynrxzYHOPc8WogDnaLpPtm7Dy-PdAyB-aQjp2xawgsWciw0RxUMRK/pub?gid=0&single=true&output=csv',
+				dtype = dict(
+					batch_number = int,
+					plane_number = int,
+					DUT_name = str,
+					orientation = str,
+					high_voltage_source = str,
+					low_voltage_source = str,
+				),
+				index_col = ['batch_number','plane_number'],
+			)
+			pixels_definition = pandas.read_csv(
+				'https://docs.google.com/spreadsheets/d/e/2PACX-1vTSddEy02EJHBoeyBsh44eupHMynrxzYHOPc8WogDnaLpPtm7Dy-PdAyB-aQjp2xawgsWciw0RxUMRK/pub?gid=1673457618&single=true&output=csv',
+				dtype = dict(
+					batch_number = int,
+					plane_number = int,
+					chubut_channel_number = int,
+					digitizer_name = str,
+					digitizer_channel_name = str,
+					row = int,
+					col = int,
+				),
+				index_col = ['batch_number','plane_number'],
+			)
+			for name,df in {'planes_definition':planes_definition, 'pixels_definition':pixels_definition}.items():
+				utils.save_dataframe(df.query(f'batch_number=={n_batch}'), name, employee.path_to_directory_of_my_task)
+	
 	match TB_batch.parent.run_name: # The parent of the batch should be the TB campaign.
 		case '230614_June':
 			setup_batch_info_June_test_beam(TB_batch)
 		case '230830_August':
 			setup_batch_info_August_test_beam(TB_batch)
+		case '240212_DESY':
+			setup_batch_info_240212_DESY_test_beam(TB_batch)
 		case _:
 			raise RuntimeError(f'Cannot determine which test beam campaign {TB_batch.pseudopath} belongs to...')
 	logging.info(f'Setup info was set for {TB_batch.pseudopath} ✅')
@@ -87,6 +122,18 @@ def load_setup_configuration_info(TB_batch:RunBureaucrat)->pandas.DataFrame:
 			planes = pandas.read_pickle(TB_batch.path_to_directory_of_task('batch_info')/'planes.pickle')
 			signals_connections = pandas.read_pickle(TB_batch.path_to_directory_of_task('batch_info')/'signals.pickle')
 		case '230830_August':
+			planes = pandas.read_pickle(TB_batch.path_to_directory_of_task('batch_info')/'planes_definition.pickle')
+			signals_connections = pandas.read_pickle(TB_batch.path_to_directory_of_task('batch_info')/'pixels_definition.pickle')
+			for df in [planes,signals_connections]:
+				df.rename(
+					columns = {
+						'digitizer_name': 'CAEN_name',
+						'digitizer_channel_name': 'CAEN_channel_name',
+						'chubut_channel_number': 'chubut_channel',
+					},
+					inplace = True,
+				)
+		case '240212_DESY':
 			planes = pandas.read_pickle(TB_batch.path_to_directory_of_task('batch_info')/'planes_definition.pickle')
 			signals_connections = pandas.read_pickle(TB_batch.path_to_directory_of_task('batch_info')/'pixels_definition.pickle')
 			for df in [planes,signals_connections]:
