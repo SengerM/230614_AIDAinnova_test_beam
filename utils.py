@@ -8,7 +8,7 @@ from contextlib import nullcontext
 from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
 import logging
 
-PATH_TO_WHEREVER_THE_DOCKER_DATA_IS_POINTING_TO = Path('/home/msenger/DESY_test_data')
+PATH_TO_WHEREVER_THE_DOCKER_DATA_IS_POINTING_TO = Path('/home/msenger/240217_DESY_test_beam')
 
 PLOTS_LABELS = {
 	'DUT_name_rowcol': 'DUT (i,j)',
