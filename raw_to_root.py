@@ -25,7 +25,7 @@ def raw_to_root(bureaucrat:RunBureaucrat, container_id:str, force:bool=False, si
 		return
 	
 	with bureaucrat.handle_task('raw_to_root') as employee:
-		logging.info(f'Processing {bureaucrat.path_to_run_directory}...')
+		logging.info(f'Processing {bureaucrat.pseudopath}...')
 		path_to_raw_file = utils.get_run_directory_within_corry_docker(bureaucrat)/'raw'/f'{bureaucrat.run_name}.raw'
 		path_to_root_file = utils.get_run_directory_within_corry_docker(bureaucrat)/employee.task_name/f'{bureaucrat.run_name}.root'
 		result = utils.run_commands_in_docker_container(
@@ -36,6 +36,19 @@ def raw_to_root(bureaucrat:RunBureaucrat, container_id:str, force:bool=False, si
 		)
 		result.check_returncode()
 		logging.info(f'Successfully converted raw to root for {bureaucrat.pseudopath} ✅')
+
+def raw_to_root_in_a_batch(TB_batch:RunBureaucrat, container_id:str, force:bool=False, silent_root:bool=False):
+	TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs')
+	
+	for run in TB_batch.list_subruns_of_task('EUDAQ_runs'):
+		logging.info(f'Processing {run.pseudopath}...')
+		raw_to_root(
+			bureaucrat = run,
+			container_id = container_id,
+			force = force,
+			silent_root = silent_root,
+		)
+		logging.info(f'Finished {run.pseudopath} ✅')
 
 if __name__=='__main__':
 	import argparse
@@ -51,7 +64,7 @@ if __name__=='__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--dir',
 		metavar = 'path', 
-		help = 'Path to the base measurement directory.',
+		help = 'Path to a `batch` directory.',
 		required = True,
 		dest = 'directory',
 		type = Path,
@@ -72,9 +85,9 @@ if __name__=='__main__':
 	)
 	
 	args = parser.parse_args()
-	raw_to_root(
-		bureaucrat = RunBureaucrat(args.directory),
+	raw_to_root_in_a_batch(
+		RunBureaucrat(args.directory),
 		force = args.force,
 		container_id = args.container_id,
-		silent_root = True,
+		silent_root = False,
 	)
