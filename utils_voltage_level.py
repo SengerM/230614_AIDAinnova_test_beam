@@ -16,18 +16,25 @@ def create_voltage_point(TB_batch:RunBureaucrat, voltage:int, EUDAQ_runs:list):
 	EUDAQ_runs: list of int
 		A list of int with the EUDAQ run numbers to be linked to this voltage.
 	"""
-	TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs')
+	TB_batch.check_these_tasks_were_run_successfully(['EUDAQ_runs','batch_info'])
 	
 	runs_within_this_batch = {int(_.run_name.split('_')[0].replace('run','')): _.run_name for _ in TB_batch.list_subruns_of_task('EUDAQ_runs')}
 	
 	with TB_batch.handle_task('voltages', drop_old_data=False) as employee:
 		voltage_point = employee.create_subrun(f'{voltage}V', if_exists='skip')
+		logging.info(f'Voltage point created in {voltage_point.pseudopath}')
 		with voltage_point.handle_task('voltage_batch') as _:
 			with open(_.path_to_directory_of_my_task/'README.md','w') as ofile:
 				print(f'The sole purpose of this task, called "voltage_batch", is to indicate that this contains the data from a voltage batch, i.e. a constant voltage.', file=ofile)
 		with voltage_point.handle_task('EUDAQ_runs') as employee_voltage_runs:
 			path_to_subruns = employee_voltage_runs.path_to_directory_of_my_task/'subruns'
 			path_to_subruns.mkdir(exist_ok=True)
+			# Link the batch info:
+			if voltage_point.path_to_directory_of_task('batch_info').exists():
+				voltage_point.path_to_directory_of_task('batch_info').unlink()
+			voltage_point.path_to_directory_of_task('batch_info').symlink_to('../../../batch_info')
+			logging.info(f'`batch_info` linked inside {voltage_point.pseudopath}')
+			# Link the runs:
 			for n_run in EUDAQ_runs:
 				new_link_in = path_to_subruns/runs_within_this_batch[n_run]
 				link_to = f'../../../../../EUDAQ_runs/subruns/{runs_within_this_batch[n_run]}'
