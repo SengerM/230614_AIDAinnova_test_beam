@@ -13,7 +13,7 @@ def setup_batch_info(TB_batch:RunBureaucrat):
 	"""Add some batch-wise information needed for the analysis, like
 	for example a link to the setup connection spreadsheet."""
 	def setup_batch_info_June_test_beam(TB_batch:RunBureaucrat):
-		TB_batch.check_these_tasks_were_run_successfully('runs') # So we are sure this is pointing to a batch
+		TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs') # So we are sure this is pointing to a batch
 		
 		n_batch = int(TB_batch.run_name.split('_')[1])
 		if n_batch in {2,3,4}:
@@ -36,7 +36,7 @@ def setup_batch_info(TB_batch:RunBureaucrat):
 				)
 	
 	def setup_batch_info_August_test_beam(TB_batch:RunBureaucrat):
-		TB_batch.check_these_tasks_were_run_successfully('runs') # So we are sure this is pointing to a batch
+		TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs') # So we are sure this is pointing to a batch
 		
 		with TB_batch.handle_task('batch_info') as employee:
 			n_batch = int(TB_batch.run_name.split('_')[1])
@@ -69,7 +69,7 @@ def setup_batch_info(TB_batch:RunBureaucrat):
 				utils.save_dataframe(df.query(f'batch_number=={n_batch}'), name, employee.path_to_directory_of_my_task)
 	
 	def setup_batch_info_240212_DESY_test_beam(TB_batch:RunBureaucrat):
-		TB_batch.check_these_tasks_were_run_successfully('runs') # So we are sure this is pointing to a batch
+		TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs') # So we are sure this is pointing to a batch
 		
 		with TB_batch.handle_task('batch_info') as employee:
 			n_batch = int(TB_batch.run_name.split('_')[1])
@@ -113,8 +113,8 @@ def setup_batch_info(TB_batch:RunBureaucrat):
 	logging.info(f'Setup info was set for {TB_batch.pseudopath} ✅')
 
 def load_setup_configuration_info(TB_batch:RunBureaucrat)->pandas.DataFrame:
-	TB_batch.check_these_tasks_were_run_successfully(['runs','batch_info'])
-	if not all([b.was_task_run_successfully('parse_waveforms') for b in TB_batch.list_subruns_of_task('runs')]):
+	TB_batch.check_these_tasks_were_run_successfully(['EUDAQ_runs','batch_info'])
+	if not all([b.was_task_run_successfully('parse_waveforms') for b in TB_batch.list_subruns_of_task('EUDAQ_runs')]):
 		raise RuntimeError(f'To load the setup configuration it is needed that all of the runs of the batch have had the `parse_waveforms` task performed on them, but does not seem to be the case')
 	
 	match TB_batch.parent.run_name: # This is the test beam campaign, the parent of every batch.
@@ -149,7 +149,7 @@ def load_setup_configuration_info(TB_batch:RunBureaucrat)->pandas.DataFrame:
 			raise RuntimeError(f'Cannot read setup information for run {TB_batch.run_name}')
 	
 	CAENs_names = []
-	for run in TB_batch.list_subruns_of_task('runs'):
+	for run in TB_batch.list_subruns_of_task('EUDAQ_runs'):
 		n_run = int(run.run_name.split('_')[0].replace('run',''))
 		df = pandas.read_pickle(run.path_to_directory_of_task('parse_waveforms')/f'{run.run_name}_CAENs_names.pickle')
 		df = df.to_frame()
@@ -242,7 +242,7 @@ def load_parsed_from_waveforms(TB_batch:RunBureaucrat, load_this:dict, variables
 		```
 		
 	"""
-	TB_batch.check_these_tasks_were_run_successfully('runs')
+	TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs')
 	
 	logging.info(f'Loading {variables} for {TB_batch.pseudopath} for {sorted(load_this)}...')
 	
@@ -266,7 +266,7 @@ def load_parsed_from_waveforms(TB_batch:RunBureaucrat, load_this:dict, variables
 	SQL_query_where = f'({SQL_query_where})'
 	
 	parsed_from_waveforms = {}
-	for run in TB_batch.list_subruns_of_task('runs'):
+	for run in TB_batch.list_subruns_of_task('EUDAQ_runs'):
 		n_run = int(run.run_name.split('_')[0].replace('run',''))
 		parsed_from_waveforms[n_run] = utils_run_level.load_parsed_from_waveforms(
 			TB_run = run,
@@ -328,7 +328,7 @@ def load_hits(TB_batch:RunBureaucrat, DUTs_and_hit_criterions:dict)->pandas.Data
 		according to the criterion specified in `DUTs_and_hit_criterions`
 		for each DUT.
 	"""
-	TB_batch.check_these_tasks_were_run_successfully('runs')
+	TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs')
 	
 	logging.info(f'Loading hits from {TB_batch.pseudopath} for {sorted(DUTs_and_hit_criterions)}...')
 	
@@ -401,12 +401,12 @@ def load_tracks(TB_batch:RunBureaucrat, only_multiplicity_one:bool=True, trigger
 
 		```
 	"""
-	TB_batch.check_these_tasks_were_run_successfully('runs')
+	TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs')
 	
 	logging.info(f'Reading tracks from {TB_batch.pseudopath}...')
 	
 	tracks = []
-	for run in TB_batch.list_subruns_of_task('runs'):
+	for run in TB_batch.list_subruns_of_task('EUDAQ_runs'):
 		df = utils_run_level.load_tracks(
 			TB_run = run,
 			only_multiplicity_one = only_multiplicity_one,
@@ -428,7 +428,7 @@ def plot_DUTs_hits(TB_batch:RunBureaucrat):
 	"""Produces a plot with a few tracks from each DUT that should have
 	some hits, and puts them all together, making it easy to see which
 	DUTs overlap in space and where they are located."""
-	TB_batch.check_these_tasks_were_run_successfully('runs')
+	TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs')
 	
 	with TB_batch.handle_task('plot_DUTs_hits') as employee:
 	
@@ -484,7 +484,7 @@ def plot_DUTs_hits(TB_batch:RunBureaucrat):
 		)
 
 def plot_DUT_distributions(TB_batch:RunBureaucrat, max_events_to_plot:int=9999, distributions:bool=True, scatter_plots:bool=True):
-	TB_batch.check_these_tasks_were_run_successfully(['runs','batch_info'])
+	TB_batch.check_these_tasks_were_run_successfully(['EUDAQ_runs','batch_info'])
 	
 	with TB_batch.handle_task('plot_DUT_distributions') as employee:
 		setup_config = load_setup_configuration_info(TB_batch)
