@@ -36,6 +36,8 @@ def create_voltage_point(TB_batch:RunBureaucrat, voltage:int, EUDAQ_runs:list):
 			logging.info(f'`batch_info` linked inside {voltage_point.pseudopath}')
 			# Link the runs:
 			for n_run in EUDAQ_runs:
+				if n_run not in runs_within_this_batch.keys():
+					raise RuntimeError(f'Run number {n_run} not available in {TB_batch.pseudopath}. Available run numbers are {runs_within_this_batch.keys()}')
 				new_link_in = path_to_subruns/runs_within_this_batch[n_run]
 				link_to = f'../../../../../EUDAQ_runs/subruns/{runs_within_this_batch[n_run]}'
 				new_link_in.symlink_to(link_to)
