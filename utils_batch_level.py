@@ -117,6 +117,10 @@ def load_setup_configuration_info(TB_batch:RunBureaucrat)->pandas.DataFrame:
 	if not all([b.was_task_run_successfully('parse_waveforms') for b in TB_batch.list_subruns_of_task('EUDAQ_runs')]):
 		raise RuntimeError(f'To load the setup configuration it is needed that all of the runs of the batch have had the `parse_waveforms` task performed on them, but does not seem to be the case')
 	
+	if TB_batch.was_task_run_successfully('voltage_batch'):
+		TB_batch_voltage = TB_batch
+		TB_batch = TB_batch.parent
+	
 	match TB_batch.parent.run_name: # This is the test beam campaign, the parent of every batch.
 		case '230614_June':
 			planes = pandas.read_pickle(TB_batch.path_to_directory_of_task('batch_info')/'planes.pickle')
@@ -147,6 +151,9 @@ def load_setup_configuration_info(TB_batch:RunBureaucrat)->pandas.DataFrame:
 				)
 		case _:
 			raise RuntimeError(f'Cannot read setup information for run {TB_batch.run_name}')
+	
+	if TB_batch.was_task_run_successfully('voltage_batch'):
+		pass
 	
 	CAENs_names = []
 	for run in TB_batch.list_subruns_of_task('EUDAQ_runs'):
@@ -491,7 +498,7 @@ def plot_DUT_distributions(TB_batch:RunBureaucrat, max_events_to_plot:int=9999, 
 		setup_config = setup_config.query('row>-1 and col>-1') # Negative row col means a fake device, such as a trigger line or so.
 		setup_config = setup_config.sort_values('DUT_name_rowcol')
 		
-		VARIABLES_TO_PLOT_DISTRIBUTION = {'Amplitude (V)','t_50 (s)','Time over 50% (s)','Noise (V)','SNR'}
+		VARIABLES_TO_PLOT_DISTRIBUTION = {'Amplitude (V)','Collected charge (V s)','t_50 (s)','Time over 50% (s)','Noise (V)','SNR'}
 		if distributions:
 			save_1D_distributions_here = employee.path_to_directory_of_my_task/'distributions'
 			save_1D_distributions_here.mkdir()
@@ -535,7 +542,7 @@ def plot_DUT_distributions(TB_batch:RunBureaucrat, max_events_to_plot:int=9999, 
 				with open(employee.path_to_directory_of_my_task/f'{variable}.html', 'w') as ofile:
 					print(html_doc, file=ofile)
 		
-		PAIRS_OF_VARIABLES_FOR_SCATTER_PLOTS = {('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')}
+		PAIRS_OF_VARIABLES_FOR_SCATTER_PLOTS = {('t_50 (s)','Amplitude (V)'),('t_50 (s)','Collected charge (V s)'),('Time over 50% (s)','Amplitude (V)'),('Time over 50% (s)','Collected charge (V s)')}
 		if scatter_plots:
 			save_2D_scatter_plots_here = employee.path_to_directory_of_my_task/'scatter_plots'
 			save_2D_scatter_plots_here.mkdir()
@@ -629,6 +636,6 @@ if __name__ == '__main__':
 	if args.setup_batch_info:
 		setup_batch_info(batch)
 	if args.plot_DUT_distributions:
-		plot_DUT_distributions(batch, max_events_to_plot=1111)
+		plot_DUT_distributions(batch, max_events_to_plot=11111)
 	if args.plot_DUTs_hits:
 		plot_DUTs_hits(batch)
