@@ -17,13 +17,14 @@ track = ROOT.std.vector(TrackClass)()
 f = ROOT.TFile.Open(ASD(PATH_TO_TRACKSdotROOT_FILE)DSA)
 tree = f.Get('Track')
 
+# Since this will run inside the docker, I cannot be way too pretentious, so I save as a CSV and afterwards outside the docker I convert into a better format, like SQLite.
 with open(Path(ASD(PATH_TO_TRACKSdotROOT_FILE)DSA).with_suffix('.csv'), 'w') as csv_file:
 	print(CSV_COLUMNS, file=csv_file)
 	for n_event,event in enumerate(tree):
 		current_track_vector = getattr(event,'global')
 		for n_track, track in enumerate(current_track_vector):
-			A = track.getIntercept(99)
-			B = track.getIntercept(-99)
+			A = track.getIntercept(99) # This is hardocded here, fine for straight line tracks (CERN) but not appropriate for wiggling tracks (DESY).
+			B = track.getIntercept(-99) # This is hardocded here, fine for straight line tracks (CERN) but not appropriate for wiggling tracks (DESY).
 			data = dict(
 				n_event = n_event,
 				n_track = n_track,
