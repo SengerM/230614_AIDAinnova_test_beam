@@ -5,7 +5,7 @@ log_level = "INFO"
 detectors_file = ASD(GEOMETRY_FILE)DSA
 histogram_file = "01_mask_noisy_pixels.root"
 
-number_of_events = 10000
+number_of_events = 20000
 
 [EventLoaderEUDAQ2]
 name = "MIMOSA26_0"
@@ -19,11 +19,23 @@ file_name = ASD(PATH_TO_RAW_FILE)DSA
 sync_by_event = true
 discard_raw_events = "MIMOSA26_0"
 
+[EventLoaderEUDAQ2]
+type = "cmsit"
+file_name = ASD(PATH_TO_RAW_FILE)DSA
+sync_by_event = true
 
 [MaskCreator]
 method = "localdensity"
 density_bandwidth = 2
 sigma_above_avg_max = 5
 rate_max = 1 
+mask_dead_pixels = true
+type = "cmsit"
+
+[MaskCreator]
+method = "localdensity"
+density_bandwidth = 2
+sigma_above_avg_max = 10
+rate_max = 1 
+mask_dead_pixels = true
 type = "mimosa26"
-mask_dead_pixels=false
