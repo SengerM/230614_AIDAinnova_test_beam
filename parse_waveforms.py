@@ -95,7 +95,7 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 	samples_per_waveform = metadata['samples_per_waveform'].array()[0]
 	time_array = numpy.linspace(0,(samples_per_waveform-1)/sampling_frequency,samples_per_waveform)
 	
-	number_of_events_to_be_processed = int(len(waveforms['event'].array())/2)
+	number_of_events_to_be_processed = int(len(waveforms['event'].array()))
 	
 	if number_of_events_for_which_to_produce_control_plots > 0:
 		path_to_directory_in_which_to_save_the_control_plots = sqlite_database_path.with_suffix('.control_plots')
