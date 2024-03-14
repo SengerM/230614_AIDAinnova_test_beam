@@ -108,7 +108,7 @@ def corry_align_telescope(EUDAQ_run:RunBureaucrat, corry_container_id:str, force
 						if f'[MIMOSA26_{n_mimosa}]' in line:
 							print(f'mask_file = "../corry_mask_noisy_pixels/corry_output/MaskCreator/MIMOSA26_{n_mimosa}/mask_MIMOSA26_{n_mimosa}.txt"', file=ofile)
 					if '[RD53B_114]' in line:
-						print(f'mask_file = "../corry_mask_noisy_pixels/corry_output/MaskCreator/RD53B_114/mask_RD53B_114.txt.txt"', file=ofile)
+						print(f'mask_file = "../corry_mask_noisy_pixels/corry_output/MaskCreator/RD53B_114/mask_RD53B_114.txt"', file=ofile)
 		
 		# Now create the config files from the templates.
 		arguments_for_config_files = {
