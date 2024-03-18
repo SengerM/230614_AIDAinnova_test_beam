@@ -1,6 +1,6 @@
 [Corryvreckan]
 output_directory = ASD(OUTPUT_DIRECTORY)DSA
-log_level = "INFO"
+log_level = "ERROR"
 
 detectors_file = ASD(GEOMETRY_FILE)DSA
 detectors_file_updated = ASD(UPDATED_GEOMETRY_FILE)DSA

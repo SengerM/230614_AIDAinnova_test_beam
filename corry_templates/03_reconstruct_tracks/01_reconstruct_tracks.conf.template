@@ -1,6 +1,6 @@
 [Corryvreckan]
 output_directory = ASD(OUTPUT_DIRECTORY)DSA
-log_level = "INFO"
+log_level = "ERROR"
 
 detectors_file = ASD(GEOMETRY_FILE)DSA
 histogram_file = "01_reconstruct_tracks.root"
