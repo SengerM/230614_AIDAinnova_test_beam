@@ -10,6 +10,7 @@ from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://githu
 import pandas
 import configparser
 import sqlite3
+import json
 
 def replace_arguments_in_file_template(file_template:Path, output_file:Path, arguments:dict):
 	"""Given a file template with arguments denoted by 'ASD(argument_name)DSA',
@@ -160,21 +161,19 @@ def corry_align_telescope(EUDAQ_run:RunBureaucrat, corry_container_id:str, force
 		result.check_returncode()
 		logging.info(f'Telescope alignment was completed for {EUDAQ_run.pseudopath}✅')
 
-def corry_reconstruct_tracks_with_telescope(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
+def corry_reconstruct_tracks(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	"""Runs the routine to reconstruct the tracks using corryvreckan on
-	all the raw files of the run pointed to by `EUDAQ_run`. Additionally,
-	it creates an SQLite file with the tracks info which is easy to read,
-	as well as the ROOT file produced by corry."""
+	all the raw files of the run pointed to by `EUDAQ_run`."""
 	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/03_reconstruct_tracks')
 	
-	TASK_NAME = 'corry_reconstruct_tracks_with_telescope'
+	TASK_NAME = 'corry_reconstruct_tracks'
 	
 	if force==False and EUDAQ_run.was_task_run_successfully(TASK_NAME):
 		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
 		return
 	
 	EUDAQ_run.check_these_tasks_were_run_successfully(['raw','corry_mask_noisy_pixels','corry_align_telescope'])
-	
+
 	with EUDAQ_run.handle_task(TASK_NAME) as employee:
 		arguments_for_config_files = {
 			'01_reconstruct_tracks.conf': dict(
@@ -185,9 +184,6 @@ def corry_reconstruct_tracks_with_telescope(EUDAQ_run:RunBureaucrat, corry_conta
 			),
 			'tell_corry_docker_to_run_this.sh': dict(
 				WORKING_DIRECTORY = str(utils.get_run_directory_within_corry_docker(EUDAQ_run)/employee.task_name),
-			),
-			'corry_tracks_root2csv.py': dict(
-				PATH_TO_TRACKSdotROOT_FILE = f"'corry_output/tracks.root'",
 			),
 		}
 		
@@ -210,6 +206,60 @@ def corry_reconstruct_tracks_with_telescope(EUDAQ_run:RunBureaucrat, corry_conta
 			stderr = subprocess.STDOUT if silent_corry == True else None,
 		)
 		result.check_returncode()
+		logging.info(f'Tracks were reconstructed for {EUDAQ_run.pseudopath} ✅')
+
+def intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
+	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/04_tracks_root_to_SQLite')
+	
+	TASK_NAME = 'intersect_tracks_with_planes'
+	
+	if force==False and EUDAQ_run.was_task_run_successfully(TASK_NAME):
+		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
+		return
+	
+	EUDAQ_run.check_these_tasks_were_run_successfully(['corry_reconstruct_tracks'])
+	if not (EUDAQ_run.parent.path_to_run_directory/'metadata.json').is_file():
+		raise FileNotFoundError(f'Cannot find file `metadata.json` in {EUDAQ_run.parent.path_to_run_directory} in which it should be specified what the z coordinates of the DUTs planes are.')
+	
+	with EUDAQ_run.handle_task(TASK_NAME) as employee:
+		# Read z position of the planes with DUTs from the metadata file:
+		with open(EUDAQ_run.parent.path_to_run_directory/'metadata.json', 'r') as ifile:
+			metadata = json.load(ifile)
+		if not isinstance(metadata, dict) or 'DUTs_planes_z_position' not in metadata.keys() or not isinstance(metadata['DUTs_planes_z_position'], list):
+			raise RuntimeError(f'Wrong format in {EUDAQ_run.parent.path_to_run_directory/"metadata.json"} file. I expect to read a dictionary with one of the keys being `"DUTs_planes_z_position": [float, float, float, ...]`')
+		if len(metadata['DUTs_planes_z_position']) != 2:
+			raise NotImplementedError(f'Currently this functionality is only implemented for 2 planes...')
+		
+		arguments_for_config_files = {
+			'tell_corry_docker_to_run_this.sh': dict(
+				WORKING_DIRECTORY = str(utils.get_run_directory_within_corry_docker(EUDAQ_run)/employee.task_name),
+			),
+			'corry_tracks_root2csv.py': dict(
+				PATH_TO_TRACKSdotROOT_FILE = f"'../corry_reconstruct_tracks/corry_output/tracks.root'",
+				P1_Z_POSITION = str(metadata['DUTs_planes_z_position'][0]),
+				P2_Z_POSITION = str(metadata['DUTs_planes_z_position'][1]),
+			),
+		}
+		
+		for fname in arguments_for_config_files:
+			replace_arguments_in_file_template(
+				file_template = TEMPLATE_FILES_DIRECTORY/f'{fname}.template',
+				output_file = employee.path_to_directory_of_my_task/fname,
+				arguments = arguments_for_config_files[fname],
+			)
+		
+		# Make the scripts executable for docker:
+		for fname in arguments_for_config_files:
+			subprocess.run(['chmod','+x',str(employee.path_to_directory_of_my_task/fname)])
+		
+		logging.info(f'Extracting hit positions from Root file in {EUDAQ_run.pseudopath}...')
+		result = utils.run_commands_in_docker_container(
+			command = str(utils.get_run_directory_within_corry_docker(EUDAQ_run)/employee.task_name/'tell_corry_docker_to_run_this.sh'),
+			container_id = corry_container_id,
+			stdout = subprocess.DEVNULL if silent_corry == True else None,
+			stderr = subprocess.STDOUT if silent_corry == True else None,
+		)
+		result.check_returncode()
 		
 		logging.info(f'Converting the CSV file into an SQLite file on {EUDAQ_run.pseudopath}...')
 		dtype = dict(
@@ -218,24 +268,25 @@ def corry_reconstruct_tracks_with_telescope(EUDAQ_run:RunBureaucrat, corry_conta
 			is_fitted = bool,
 			chi2 = float,
 			ndof = float,
-			Ax = float,
-			Ay = float,
-			Az = float,
-			Bx = float,
-			By = float,
-			Bz = float,
+			P1x = float,
+			P1y = float,
+			P1z = float,
+			P2x = float,
+			P2y = float,
+			P2z = float,
 		)
-		with SQLiteDataFrameDumper(employee.path_to_directory_of_my_task/'tracks.sqlite', dump_after_n_appends=1e3) as tracks_dumper:
-			for df in pandas.read_csv(employee.path_to_directory_of_my_task/'corry_output'/'tracks.csv', chunksize=1111, index_col=['n_event','n_track']):
+		with SQLiteDataFrameDumper(employee.path_to_directory_of_my_task/'intersects.sqlite', dump_after_n_appends=1e3) as tracks_dumper:
+			for df in pandas.read_csv(employee.path_to_directory_of_my_task/'intersects.csv', chunksize=1111, index_col=['n_event','n_track']):
 				tracks_dumper.append(df)
 		logging.info('CSV to SQLite file conversion successful, CSV file will be removed.')
-		(employee.path_to_directory_of_my_task/'corry_output'/'tracks.csv').unlink()
-		logging.info(f'Tracks were reconstructed for {EUDAQ_run.pseudopath} ✅')
+		(employee.path_to_directory_of_my_task/'intersects.csv').unlink()
+		logging.info(f'Tracks intersections with planes extracted for {EUDAQ_run.pseudopath} ✅')
 
 def corry_do_all_steps_in_some_run(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	corry_mask_noisy_pixels(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_align_telescope(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
-	corry_reconstruct_tracks_with_telescope(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	corry_reconstruct_tracks(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	intersect_tracks_with_planes(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 
 if __name__ == '__main__':
 	import sys

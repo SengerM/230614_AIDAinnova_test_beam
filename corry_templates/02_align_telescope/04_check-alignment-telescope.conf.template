@@ -25,8 +25,11 @@ reject_by_roi = true
 
 [Tracking4D]
 log_level = INFO
-momentum = 120GeV
-track_model = "straightline"
-spatial_cut_abs = 100um, 100um
+momentum = 4.0GeV
+track_model = "gbl"
+spatial_cut_abs = 300um, 300um
 exclude_dut = true
 min_hits_on_track = 6
+time_cut_abs = 20us
+unique_cluster_usage=true
+volume_scattering = true
