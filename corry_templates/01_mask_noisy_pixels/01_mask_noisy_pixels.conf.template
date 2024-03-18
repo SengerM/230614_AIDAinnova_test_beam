@@ -1,6 +1,6 @@
 [Corryvreckan]
 output_directory = ASD(OUTPUT_DIRECTORY)DSA
-log_level = "INFO"
+log_level = "ERROR"
 
 detectors_file = ASD(GEOMETRY_FILE)DSA
 histogram_file = "01_mask_noisy_pixels.root"
@@ -19,23 +19,17 @@ file_name = ASD(PATH_TO_RAW_FILE)DSA
 sync_by_event = true
 discard_raw_events = "MIMOSA26_0"
 
-[EventLoaderEUDAQ2]
-type = "cmsit"
-file_name = ASD(PATH_TO_RAW_FILE)DSA
-sync_by_event = true
+[MaskCreator]
+method = "frequency"
+frequency_cut = 50
+type="mimosa26"
 
 [MaskCreator]
-method = "localdensity"
-density_bandwidth = 2
-sigma_above_avg_max = 5
-rate_max = 1 
-mask_dead_pixels = true
-type = "cmsit"
+method = "frequency"
+frequency_cut = 100
+name = "MIMOSA26_0"
 
 [MaskCreator]
-method = "localdensity"
-density_bandwidth = 2
-sigma_above_avg_max = 10
-rate_max = 1 
-mask_dead_pixels = true
-type = "mimosa26"
+method = "frequency"
+frequency_cut = 150
+name = "MIMOSA26_3"
