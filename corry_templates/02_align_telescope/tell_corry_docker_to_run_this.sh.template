@@ -6,12 +6,13 @@ cd ASD(WORKING_DIRECTORY)DSA &&
 
 corry -c 01_prealign-telescope.conf &&
 
-# Iterative process:
+# Telescope alignment (MIMOSAs):
 corry -c 02_align-telescope.conf -o AlignmentTrackChi2.align_orientation=false &&
+corry -c 02_align-telescope.conf -o detectors_file=ASD(GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS)DSA -o Tracking4D.spatial_cut_abs=500um,500um -o AlignmentTrackChi2.max_track_chi2ndof=40 &&
+corry -c 02_align-telescope.conf -o detectors_file=ASD(GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS)DSA -o Tracking4D.spatial_cut_abs=300um,300um -o AlignmentTrackChi2.max_track_chi2ndof=30 &&
 corry -c 02_align-telescope.conf -o detectors_file=ASD(GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS)DSA -o Tracking4D.spatial_cut_abs=200um,200um -o AlignmentTrackChi2.max_track_chi2ndof=20 &&
-corry -c 02_align-telescope.conf -o detectors_file=ASD(GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS)DSA -o Tracking4D.spatial_cut_abs=100um,100um -o AlignmentTrackChi2.max_track_chi2ndof=10 -o Tracking4D.min_hits_on_track=5 &&
-
-# Final alignment:
+corry -c 02_align-telescope.conf -o detectors_file=ASD(GEOMETRY_FILE_FOR_ALIGNMENT_ITERATIONS)DSA -o Tracking4D.spatial_cut_abs=150um,150um -o AlignmentTrackChi2.max_track_chi2ndof=20 &&
 corry -c 03_align-telescope-mille.conf &&
 
+# Alignment check:
 corry -c 04_check-alignment-telescope.conf

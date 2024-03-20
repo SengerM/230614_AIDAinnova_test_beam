@@ -108,8 +108,8 @@ def corry_align_telescope(EUDAQ_run:RunBureaucrat, corry_container_id:str, force
 					for n_mimosa in [0,1,2,3,4,5]:
 						if f'[MIMOSA26_{n_mimosa}]' in line:
 							print(f'mask_file = "../corry_mask_noisy_pixels/corry_output/MaskCreator/MIMOSA26_{n_mimosa}/mask_MIMOSA26_{n_mimosa}.txt"', file=ofile)
-					if '[RD53B_114]' in line:
-						print(f'mask_file = "../corry_mask_noisy_pixels/corry_output/MaskCreator/RD53B_114/mask_RD53B_114.txt"', file=ofile)
+					# ~ if '[RD53B_114]' in line:
+						# ~ print(f'mask_file = "../corry_mask_noisy_pixels/corry_output/MaskCreator/RD53B_114/mask_RD53B_114.txt"', file=ofile)
 		
 		# Now create the config files from the templates.
 		arguments_for_config_files = {
@@ -208,36 +208,40 @@ def corry_reconstruct_tracks(EUDAQ_run:RunBureaucrat, corry_container_id:str, fo
 		result.check_returncode()
 		logging.info(f'Tracks were reconstructed for {EUDAQ_run.pseudopath} ✅')
 
-def intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
-	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/04_tracks_root_to_SQLite')
+def corry_align_CROC(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
+	"""Runs the routine to reconstruct the tracks using corryvreckan on
+	all the raw files of the run pointed to by `EUDAQ_run`."""
+	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/04_align_CROC')
 	
-	TASK_NAME = 'intersect_tracks_with_planes'
+	TASK_NAME = 'corry_align_CROC'
 	
 	if force==False and EUDAQ_run.was_task_run_successfully(TASK_NAME):
 		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
 		return
 	
-	EUDAQ_run.check_these_tasks_were_run_successfully(['corry_reconstruct_tracks'])
-	if not (EUDAQ_run.parent.path_to_run_directory/'metadata.json').is_file():
-		raise FileNotFoundError(f'Cannot find file `metadata.json` in {EUDAQ_run.parent.path_to_run_directory} in which it should be specified what the z coordinates of the DUTs planes are.')
-	
+	EUDAQ_run.check_these_tasks_were_run_successfully(['raw','corry_reconstruct_tracks'])
+
 	with EUDAQ_run.handle_task(TASK_NAME) as employee:
-		# Read z position of the planes with DUTs from the metadata file:
-		with open(EUDAQ_run.parent.path_to_run_directory/'metadata.json', 'r') as ifile:
-			metadata = json.load(ifile)
-		if not isinstance(metadata, dict) or 'DUTs_planes_z_position' not in metadata.keys() or not isinstance(metadata['DUTs_planes_z_position'], list):
-			raise RuntimeError(f'Wrong format in {EUDAQ_run.parent.path_to_run_directory/"metadata.json"} file. I expect to read a dictionary with one of the keys being `"DUTs_planes_z_position": [float, float, float, ...]`')
-		if len(metadata['DUTs_planes_z_position']) != 2:
-			raise NotImplementedError(f'Currently this functionality is only implemented for 2 planes...')
-		
 		arguments_for_config_files = {
+			'01_prealign.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"../corry_align_telescope/corry_output/align-telescope-mille.geo"', # Comes from the previous step.
+				UPDATED_GEOMETRY_FILE = f'"corry_output/geometry.geo"',
+				PATH_TO_RAW_FILE = f'"../raw/{EUDAQ_run.run_name}.raw"',
+			),
+			'02_align.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"corry_output/geometry.geo"',
+				UPDATED_GEOMETRY_FILE = f'"corry_output/geometry.geo"', # Overwrite it, this will run many times in an iterative way.
+				PATH_TO_ROOT_FILE_WITH_TRACKS = f'"../corry_reconstruct_tracks/corry_output/tracks.root"',
+			),
+			'03_check-alignment-all.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"corry_output/geometry.geo"', # This is the new geometry file resulting from this "corry_align_CROC".
+				PATH_TO_RAW_FILE = f'"../raw/{EUDAQ_run.run_name}.raw"',
+			),
 			'tell_corry_docker_to_run_this.sh': dict(
 				WORKING_DIRECTORY = str(utils.get_run_directory_within_corry_docker(EUDAQ_run)/employee.task_name),
-			),
-			'corry_tracks_root2csv.py': dict(
-				PATH_TO_TRACKSdotROOT_FILE = f"'../corry_reconstruct_tracks/corry_output/tracks.root'",
-				P1_Z_POSITION = str(metadata['DUTs_planes_z_position'][0]),
-				P2_Z_POSITION = str(metadata['DUTs_planes_z_position'][1]),
 			),
 		}
 		
@@ -252,7 +256,7 @@ def intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_id:str
 		for fname in arguments_for_config_files:
 			subprocess.run(['chmod','+x',str(employee.path_to_directory_of_my_task/fname)])
 		
-		logging.info(f'Extracting hit positions from Root file in {EUDAQ_run.pseudopath}...')
+		logging.info(f'Aligning CROC on {EUDAQ_run.pseudopath}...')
 		result = utils.run_commands_in_docker_container(
 			command = str(utils.get_run_directory_within_corry_docker(EUDAQ_run)/employee.task_name/'tell_corry_docker_to_run_this.sh'),
 			container_id = corry_container_id,
@@ -260,32 +264,68 @@ def intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_id:str
 			stderr = subprocess.STDOUT if silent_corry == True else None,
 		)
 		result.check_returncode()
+		logging.info(f'Finished aligning CROC on {EUDAQ_run.pseudopath} ✅')
+
+def intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
+	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/05_intersect_tracks_with_DUT_planes')
+	
+	TASK_NAME = 'intersect_tracks_with_planes'
+	
+	if force==False and EUDAQ_run.was_task_run_successfully(TASK_NAME):
+		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
+		return
+	
+	EUDAQ_run.check_these_tasks_were_run_successfully(['corry_reconstruct_tracks','corry_align_CROC'])
+
+	with EUDAQ_run.handle_task(TASK_NAME) as employee:
 		
-		logging.info(f'Converting the CSV file into an SQLite file on {EUDAQ_run.pseudopath}...')
-		dtype = dict(
-			n_event = int,
-			n_track = int,
-			is_fitted = bool,
-			chi2 = float,
-			ndof = float,
-			P1x = float,
-			P1y = float,
-			P1z = float,
-			P2x = float,
-			P2y = float,
-			P2z = float,
+		# Read the 'geometry.geo' file from the previous step, to extract automatically DUT_names and z_planes, needed for this step.
+		geo_config = configparser.ConfigParser()
+		geo_config.read(EUDAQ_run.path_to_directory_of_task('corry_align_CROC')/'corry_output/geometry.geo')
+		geo_config = {s:dict(geo_config.items(s)) for s in geo_config.sections()} # Convert to a dictionary. Easier object for a configuration.
+		# Extract DUT_names and z_planes from the geometry file:
+		DUT_names = [_ for _ in geo_config.keys() if geo_config[_].get('role')=='"dut"']
+		z_planes = [geo_config[_]['position'].split(',')[2] for _ in DUT_names if 'RD53' not in _] # Extract z_position of the DUTs (except the CROC RD53, which we don't care).
+		
+		arguments_for_config_files = {
+			'tell_corry_docker_to_run_this.sh': dict(
+				WORKING_DIRECTORY = str(utils.get_run_directory_within_corry_docker(EUDAQ_run)/employee.task_name),
+			),
+			'write-tracktree.conf': dict(
+				OUTPUT_DIRECTORY = f'"corry_output"',
+				GEOMETRY_FILE = f'"../corry_align_CROC/corry_output/geometry.geo"', # From previous step.
+				PATH_TO_RAW_FILE = f'"../raw/{EUDAQ_run.run_name}.raw"',
+				DUT_NAMES = str(DUT_names)[1:-1].replace("'",'"'),
+				Z_PLANES = str(z_planes)[1:-1].replace("'",''),
+			),
+		}
+		
+		for fname in arguments_for_config_files:
+			replace_arguments_in_file_template(
+				file_template = TEMPLATE_FILES_DIRECTORY/f'{fname}.template',
+				output_file = employee.path_to_directory_of_my_task/fname,
+				arguments = arguments_for_config_files[fname],
+			)
+		
+		# Make the scripts executable for docker:
+		for fname in arguments_for_config_files:
+			subprocess.run(['chmod','+x',str(employee.path_to_directory_of_my_task/fname)])
+		
+		logging.info(f'Intersecting tracks with planes on {EUDAQ_run.pseudopath}...')
+		result = utils.run_commands_in_docker_container(
+			command = str(utils.get_run_directory_within_corry_docker(EUDAQ_run)/employee.task_name/'tell_corry_docker_to_run_this.sh'),
+			container_id = corry_container_id,
+			stdout = subprocess.DEVNULL if silent_corry == True else None,
+			stderr = subprocess.STDOUT if silent_corry == True else None,
 		)
-		with SQLiteDataFrameDumper(employee.path_to_directory_of_my_task/'intersects.sqlite', dump_after_n_appends=1e3) as tracks_dumper:
-			for df in pandas.read_csv(employee.path_to_directory_of_my_task/'intersects.csv', chunksize=1111, index_col=['n_event','n_track']):
-				tracks_dumper.append(df)
-		logging.info('CSV to SQLite file conversion successful, CSV file will be removed.')
-		(employee.path_to_directory_of_my_task/'intersects.csv').unlink()
-		logging.info(f'Tracks intersections with planes extracted for {EUDAQ_run.pseudopath} ✅')
+		result.check_returncode()
+		logging.info(f'Tracks intersections with planes completed on {EUDAQ_run.pseudopath} ✅')
 
 def corry_do_all_steps_in_some_run(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	corry_mask_noisy_pixels(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_align_telescope(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_reconstruct_tracks(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	corry_align_CROC(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	intersect_tracks_with_planes(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 
 if __name__ == '__main__':

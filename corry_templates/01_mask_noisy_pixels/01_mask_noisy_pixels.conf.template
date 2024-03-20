@@ -21,8 +21,8 @@ discard_raw_events = "MIMOSA26_0"
 
 [MaskCreator]
 method = "frequency"
-frequency_cut = 50
-type="mimosa26"
+frequency_cut = 200
+type = "mimosa26"
 
 [MaskCreator]
 method = "frequency"

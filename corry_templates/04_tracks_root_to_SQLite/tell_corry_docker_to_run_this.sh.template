@@ -1,7 +1,0 @@
-#!/bin/bash
-
-set -e
-
-cd ASD(WORKING_DIRECTORY)DSA &&
-
-python3 corry_tracks_root2csv.py

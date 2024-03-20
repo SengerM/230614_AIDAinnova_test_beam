@@ -6,7 +6,7 @@ detectors_file = ASD(GEOMETRY_FILE)DSA
 detectors_file_updated = ASD(UPDATED_GEOMETRY_FILE)DSA
 histogram_file = "03_align-telescope.root"
 
-number_of_tracks=30000
+number_of_tracks = 30000
 
 [EventLoaderEUDAQ2]
 name = "MIMOSA26_0"
@@ -24,18 +24,13 @@ discard_raw_events = "MIMOSA26_0"
 type = "Mimosa26"
 
 [Tracking4D]
-log_level = INFO
 momentum = 4.0GeV
 track_model = "gbl"
-spatial_cut_abs = 300um, 300um
+spatial_cut_abs = 800um, 800um
 exclude_dut = true
 min_hits_on_track = 6
-time_cut_abs = 20us
-unique_cluster_usage=true
-volume_scattering = true
 
 [AlignmentTrackChi2]
-log_level = INFO
 exclude_dut = true
 iterations = 3
 prune_tracks = true

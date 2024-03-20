@@ -6,7 +6,7 @@ detectors_file = ASD(GEOMETRY_FILE)DSA
 detectors_file_updated = ASD(UPDATED_GEOMETRY_FILE)DSA
 histogram_file = "02_prealign-telescope.root"
 
-number_of_events=16000
+number_of_events = 20000
 
 [EventLoaderEUDAQ2]
 name = "MIMOSA26_0"
@@ -24,8 +24,7 @@ discard_raw_events = "MIMOSA26_0"
 type = "Mimosa26"
 
 [Correlations]
-type = "Mimosa26"
 
 [Prealignment]
-method = maximum
+method = gauss_fit
 type = "Mimosa26"

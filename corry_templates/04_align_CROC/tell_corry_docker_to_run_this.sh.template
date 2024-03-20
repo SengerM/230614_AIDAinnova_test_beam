@@ -1,0 +1,17 @@
+#!/bin/bash
+
+set -e
+
+cd ASD(WORKING_DIRECTORY)DSA &&
+
+#  Alignment of DUTs (in particular CROC) (?):
+corry -c 01_prealign.conf &&
+corry -c 02_align.conf -o AlignmentDUTResidual.align_orientation=false &&
+corry -c 02_align.conf -o DUTAssociation.spatial_cut_rel=40 -o AlignmentDUTResidual.align_orientation=false &&
+corry -c 02_align.conf -o DUTAssociation.spatial_cut_rel=30 &&
+corry -c 02_align.conf -o DUTAssociation.spatial_cut_rel=10 &&
+corry -c 02_align.conf -o DUTAssociation.spatial_cut_rel=5 &&
+corry -c 02_align.conf -o DUTAssociation.spatial_cut_rel=3 &&
+
+# Check the alignment of all elements:
+corry -c 03_check-alignment-all.conf

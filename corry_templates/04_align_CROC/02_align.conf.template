@@ -1,0 +1,24 @@
+[Corryvreckan]
+log_level = "ERROR"
+
+output_directory = ASD(OUTPUT_DIRECTORY)DSA
+detectors_file = ASD(GEOMETRY_FILE)DSA
+detectors_file_updated = ASD(UPDATED_GEOMETRY_FILE)DSA
+histogram_file = "02_align.root"
+
+[FileReader]
+file_name = ASD(PATH_TO_ROOT_FILE_WITH_TRACKS)DSA
+
+#To associate clusters on DUTs to the tracks reconstructed with telescope planes
+[DUTAssociation]
+# Cut in residuals: % of the assigned resolution at each plane
+spatial_cut_rel = 50
+use_cluster_centre = true
+type = "cmsit"
+
+#Alignment module for DUTs
+[AlignmentDUTResidual]
+align_orientation=true
+align_position=true
+max_track_chi2ndof = 50
+type = "cmsit"

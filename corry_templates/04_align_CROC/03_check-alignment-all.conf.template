@@ -1,9 +1,12 @@
 [Corryvreckan]
-output_directory = ASD(OUTPUT_DIRECTORY)DSA
 log_level = "ERROR"
 
+output_directory = ASD(OUTPUT_DIRECTORY)DSA
 detectors_file = ASD(GEOMETRY_FILE)DSA
-histogram_file = "01_reconstruct_tracks.root"
+
+histogram_file = "check-alignment-all.root"
+
+number_of_tracks = 30000
 
 [EventLoaderEUDAQ2]
 name = "MIMOSA26_0"
@@ -12,22 +15,19 @@ sync_by_event = true
 ignore_bore = false
 
 [EventLoaderEUDAQ2]
-type = "mimosa26","cmsit","caen5748"
+type = "mimosa26", "caen5748", "cmsit"
 file_name = ASD(PATH_TO_RAW_FILE)DSA
 sync_by_event = true
-discard_raw_events = "MIMOSA26_0"
 
 [ClusteringSpatial]
-type = "Mimosa26", "cmsit", "caen5748"
+type = "mimosa26"
+reject_by_roi = true
 
 [Tracking4D]
-log_level = INFO
-momentum = 4.0GeV
+momentum = 4GeV
 track_model = "gbl"
 spatial_cut_abs = 150um, 150um
 exclude_dut = true
 min_hits_on_track = 6
+volumen_scattering = true
 
-[FileWriter]
-file_name = ASD(NAME_OF_OUTPUT_FILE_WITH_TRACKS)DSA
-include = "Track"

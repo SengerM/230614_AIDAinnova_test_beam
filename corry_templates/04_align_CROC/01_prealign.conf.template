@@ -1,0 +1,41 @@
+[Corryvreckan]
+log_level = "ERROR"
+output_directory = ASD(OUTPUT_DIRECTORY)DSA
+detectors_file = ASD(GEOMETRY_FILE)DSA
+detectors_file_updated = ASD(UPDATED_GEOMETRY_FILE)DSA
+histogram_file = "01_prealign.root"
+number_of_events = 30000
+
+[EventLoaderEUDAQ2]
+name = "MIMOSA26_0"
+file_name = ASD(PATH_TO_RAW_FILE)DSA
+sync_by_event = true
+ignore_bore = false
+
+[EventLoaderEUDAQ2]
+type = "mimosa26","cmsit","caen5748"
+file_name = ASD(PATH_TO_RAW_FILE)DSA
+sync_by_event = true
+discard_raw_events = "MIMOSA26_0"
+
+[ClusteringSpatial]
+type = "Mimosa26", "cmsit", "caen5748"
+
+#Creates correlation plots with respect to the reference plane
+[Correlations]
+
+#Prealignment module; performs translational shift of the planes in global x 
+#and y coordinate by calculating the correlations between all (selected) 
+#detectors in the setup and the reference plane
+[Prealignment]
+# the fit fails, it should be put the range
+method = gauss_fit
+#method = maximum
+#to just prealign refernence caen
+type = "caen5748"
+
+[Prealignment]
+# the fit fails, it should be put the range
+#method = gauss_fit
+#to just prealign refernence caen
+type = "cmsit"
