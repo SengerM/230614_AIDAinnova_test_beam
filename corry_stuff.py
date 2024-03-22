@@ -268,10 +268,10 @@ def corry_align_CROC(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool
 		result.check_returncode()
 		logging.info(f'Finished aligning CROC on {EUDAQ_run.pseudopath} ✅')
 
-def intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
+def corry_intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/05_intersect_tracks_with_DUT_planes')
 	
-	TASK_NAME = 'intersect_tracks_with_planes'
+	TASK_NAME = 'corry_intersect_tracks_with_planes'
 	
 	if force==False and EUDAQ_run.was_task_run_successfully(TASK_NAME):
 		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
@@ -330,11 +330,11 @@ def convert_tracks_root_file_to_easy_SQLite(EUDAQ_run:RunBureaucrat, force:bool=
 		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
 		return
 	
-	EUDAQ_run.check_these_tasks_were_run_successfully(['intersect_tracks_with_planes'])
+	EUDAQ_run.check_these_tasks_were_run_successfully(['corry_intersect_tracks_with_planes'])
 	
 	with EUDAQ_run.handle_task(TASK_NAME) as employee:
 		logging.info(f'Converting ROOT file with tracks into SQLite file for {employee.pseudopath}...')
-		path_to_root_file = EUDAQ_run.path_to_directory_of_task('intersect_tracks_with_planes')/'corry_output/TreeWriterTracks/tracks.root'
+		path_to_root_file = EUDAQ_run.path_to_directory_of_task('corry_intersect_tracks_with_planes')/'corry_output/TreeWriterTracks/tracks.root'
 		with uproot.open(path_to_root_file) as root_file:
 			with SQLiteDataFrameDumper(employee.path_to_directory_of_my_task/'tracks.sqlite', dump_after_n_appends=1e3) as dumper:
 				tracks_tree = root_file['tracks']
@@ -361,7 +361,7 @@ def corry_do_all_steps_in_some_run(EUDAQ_run:RunBureaucrat, corry_container_id:s
 	corry_align_telescope(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_reconstruct_tracks(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_align_CROC(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
-	intersect_tracks_with_planes(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	corry_intersect_tracks_with_planes(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	convert_tracks_root_file_to_easy_SQLite(EUDAQ_run=EUDAQ_run, force=force)
 
 if __name__ == '__main__':
