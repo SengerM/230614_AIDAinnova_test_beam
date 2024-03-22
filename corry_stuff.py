@@ -11,6 +11,8 @@ import pandas
 import configparser
 import sqlite3
 import json
+import uproot
+import numpy
 
 def replace_arguments_in_file_template(file_template:Path, output_file:Path, arguments:dict):
 	"""Given a file template with arguments denoted by 'ASD(argument_name)DSA',
@@ -321,12 +323,46 @@ def intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_id:str
 		result.check_returncode()
 		logging.info(f'Tracks intersections with planes completed on {EUDAQ_run.pseudopath} ✅')
 
+def convert_tracks_root_file_to_easy_SQLite(EUDAQ_run:RunBureaucrat, force:bool=False):
+	TASK_NAME = 'convert_tracks_root_file_to_easy_SQLite'
+	
+	if force==False and EUDAQ_run.was_task_run_successfully(TASK_NAME):
+		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
+		return
+	
+	EUDAQ_run.check_these_tasks_were_run_successfully(['intersect_tracks_with_planes'])
+	
+	with EUDAQ_run.handle_task(TASK_NAME) as employee:
+		logging.info(f'Converting ROOT file with tracks into SQLite file for {employee.pseudopath}...')
+		path_to_root_file = EUDAQ_run.path_to_directory_of_task('intersect_tracks_with_planes')/'corry_output/TreeWriterTracks/tracks.root'
+		with uproot.open(path_to_root_file) as root_file:
+			with SQLiteDataFrameDumper(employee.path_to_directory_of_my_task/'tracks.sqlite', dump_after_n_appends=1e3) as dumper:
+				tracks_tree = root_file['tracks']
+				
+				EventIDs = tracks_tree['EventID'].array()
+				data_raw = {_:tracks_tree[_].array() for _ in tracks_tree.keys() if _ not in {'EventID'}}
+				
+				# Now we iterate. Unfortunately, the format is such that this cannot be avoided, because the track multiplicity is nested in a dimension of the arrays.
+				for n_event,EventID in enumerate(EventIDs):
+					for n_track,TrackID in enumerate(data_raw['TrackID'][n_event]): # This is the thing that, unfortunately, cannot be avoided...
+						this_track_data = {
+							key: data_raw[key][n_event][n_track] for key in tracks_tree.keys() if key not in {'EventID'}
+						}
+						this_track_data['EventID'] = EventID # This branch has a different format from the other branches.
+						this_track_data['n_event'] = EventID # This is the index I will use later on to match the data from the digitizers with the tracks. I don't use `n_track` (the variable) here because there is an arbitrary offset WRT `EventID`, given by the fact that all events for which Corry could not reconstruct any track are not here, creating thus this offset.
+						this_track_data['n_track'] = n_track
+						this_track_data = pandas.DataFrame(this_track_data, index=[0])
+						this_track_data.set_index(['n_event','n_track'], inplace=True)
+						dumper.append(this_track_data)
+			logging.info(f'Finished converting ROOT file with tracks into SQLite for {employee.pseudopath} ✅')
+
 def corry_do_all_steps_in_some_run(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	corry_mask_noisy_pixels(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_align_telescope(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_reconstruct_tracks(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_align_CROC(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	intersect_tracks_with_planes(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	convert_tracks_root_file_to_easy_SQLite(EUDAQ_run=EUDAQ_run, force=force)
 
 if __name__ == '__main__':
 	import sys
