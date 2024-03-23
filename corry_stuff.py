@@ -174,13 +174,13 @@ def corry_reconstruct_tracks(EUDAQ_run:RunBureaucrat, corry_container_id:str, fo
 		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
 		return
 	
-	EUDAQ_run.check_these_tasks_were_run_successfully(['raw','corry_mask_noisy_pixels','corry_align_telescope'])
+	EUDAQ_run.check_these_tasks_were_run_successfully(['raw','corry_mask_noisy_pixels','hardcode_Jordis_geometry_file_Feb2024DESY'])
 
 	with EUDAQ_run.handle_task(TASK_NAME) as employee:
 		arguments_for_config_files = {
 			'01_reconstruct_tracks.conf': dict(
 				OUTPUT_DIRECTORY = f'"corry_output"',
-				GEOMETRY_FILE = f'"../corry_align_telescope/corry_output/align-telescope-mille.geo"',
+				GEOMETRY_FILE = f'"../hardcode_Jordis_geometry_file_Feb2024DESY/geometry.geo"',
 				PATH_TO_RAW_FILE = f'"../raw/{EUDAQ_run.run_name}.raw"',
 				NAME_OF_OUTPUT_FILE_WITH_TRACKS = f'"tracks.root"',
 			),
@@ -228,14 +228,14 @@ def corry_align_CROC(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool
 			'01_prealign.conf': dict(
 				OUTPUT_DIRECTORY = f'"corry_output"',
 				GEOMETRY_FILE = f'"../corry_align_telescope/corry_output/align-telescope-mille.geo"', # Comes from the previous step.
-				UPDATED_GEOMETRY_FILE = f'"corry_output/geometry.geo"',
+				UPDATED_GEOMETRY_FILE = f'"corry_output/geometry.geo"', # Create a new one within this step's directory.
 				PATH_TO_RAW_FILE = f'"../raw/{EUDAQ_run.run_name}.raw"',
 			),
 			'02_align.conf': dict(
 				OUTPUT_DIRECTORY = f'"corry_output"',
 				GEOMETRY_FILE = f'"corry_output/geometry.geo"',
 				UPDATED_GEOMETRY_FILE = f'"corry_output/geometry.geo"', # Overwrite it, this will run many times in an iterative way.
-				PATH_TO_ROOT_FILE_WITH_TRACKS = f'"../corry_reconstruct_tracks/corry_output/tracks.root"',
+				PATH_TO_ROOT_FILE_WITH_TRACKS = f'"../corry_reconstruct_tracks/corry_output/tracks.root"', # From previous track reconstruction step.
 			),
 			'03_check-alignment-all.conf': dict(
 				OUTPUT_DIRECTORY = f'"corry_output"',
@@ -277,13 +277,13 @@ def corry_intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_
 		logging.info(f'Found an already successfull execution of {TASK_NAME} within {EUDAQ_run.pseudopath}, will not do anything.')
 		return
 	
-	EUDAQ_run.check_these_tasks_were_run_successfully(['corry_reconstruct_tracks','corry_align_CROC'])
+	EUDAQ_run.check_these_tasks_were_run_successfully(['corry_reconstruct_tracks','hardcode_Jordis_geometry_file_Feb2024DESY'])
 
 	with EUDAQ_run.handle_task(TASK_NAME) as employee:
 		
 		# Read the 'geometry.geo' file from the previous step, to extract automatically DUT_names and z_planes, needed for this step.
 		geo_config = configparser.ConfigParser()
-		geo_config.read(EUDAQ_run.path_to_directory_of_task('corry_align_CROC')/'corry_output/geometry.geo')
+		geo_config.read(EUDAQ_run.path_to_directory_of_task('hardcode_Jordis_geometry_file_Feb2024DESY')/'geometry.geo')
 		geo_config = {s:dict(geo_config.items(s)) for s in geo_config.sections()} # Convert to a dictionary. Easier object for a configuration.
 		# Extract DUT_names and z_planes from the geometry file:
 		DUT_names = [_ for _ in geo_config.keys() if geo_config[_].get('role')=='"dut"']
@@ -295,7 +295,7 @@ def corry_intersect_tracks_with_planes(EUDAQ_run:RunBureaucrat, corry_container_
 			),
 			'write-tracktree.conf': dict(
 				OUTPUT_DIRECTORY = f'"corry_output"',
-				GEOMETRY_FILE = f'"../corry_align_CROC/corry_output/geometry.geo"', # From previous step.
+				GEOMETRY_FILE = f'"../hardcode_Jordis_geometry_file_Feb2024DESY/geometry.geo"', # From previous step.
 				PATH_TO_RAW_FILE = f'"../raw/{EUDAQ_run.run_name}.raw"',
 				DUT_NAMES = str(DUT_names)[1:-1].replace("'",'"'),
 				Z_PLANES = str(z_planes)[1:-1].replace("'",''),
@@ -356,11 +356,28 @@ def convert_tracks_root_file_to_easy_SQLite(EUDAQ_run:RunBureaucrat, force:bool=
 						dumper.append(this_track_data)
 			logging.info(f'Finished converting ROOT file with tracks into SQLite for {employee.pseudopath} ✅')
 
+def hardcode_Jordis_geometry_file_Feb2024DESY(EUDAQ_run:RunBureaucrat):
+	"""This function is here because at the moment I cannot make the 
+	reconstruction machinery to properly align the RD53 plane. Jordi sent
+	a `.geo` file that he somehow managed to produce, and seems to work.
+	Since this should not change a lot within the test beam, this function
+	just copy-pastes that geometry file and make it available."""
+	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/hardcode')
+	
+	EUDAQ_run.check_these_tasks_were_run_successfully(['raw'])
+	
+	with EUDAQ_run.handle_task('hardcode_Jordis_geometry_file_Feb2024DESY') as employee:
+		with open(TEMPLATE_FILES_DIRECTORY/'Jordi_geometry_aligned_all_Feb2024DESY.geo', 'r') as ifile:
+			with open(employee.path_to_directory_of_my_task/'geometry.geo', 'w') as ofile:
+				for line in ifile:
+					print(line, file=ofile, end='')
+
 def corry_do_all_steps_in_some_run(EUDAQ_run:RunBureaucrat, corry_container_id:str, force:bool=False, silent_corry:bool=False):
 	corry_mask_noisy_pixels(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
-	corry_align_telescope(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	hardcode_Jordis_geometry_file_Feb2024DESY(EUDAQ_run=EUDAQ_run)
+	# ~ corry_align_telescope(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_reconstruct_tracks(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
-	corry_align_CROC(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
+	# ~ corry_align_CROC(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_intersect_tracks_with_planes(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	convert_tracks_root_file_to_easy_SQLite(EUDAQ_run=EUDAQ_run, force=force)
 
