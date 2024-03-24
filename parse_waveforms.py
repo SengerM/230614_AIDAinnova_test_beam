@@ -188,15 +188,13 @@ def parse_waveforms(EUDAQ_run_dn:DatanodeHandler, force:bool=False):
 		)
 		logging.info(f'Successfully parsed waveforms in {EUDAQ_run_dn.pseudopath} ✅')
 
-def parse_waveforms_in_batch(TB_batch_dn:DatanodeHandler, force:bool=False):
-	TB_batch_dn.check_datanode_class('TB_batch')
-	for EUDAQ_run_dn in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs'):
-		parse_waveforms(EUDAQ_run_dn=EUDAQ_run_dn, force=force)
-
 if __name__=='__main__':
 	import argparse
 	import sys
 	from plotly_utils import set_my_template_as_default
+	import my_telegram_bots # Secret tokens from my bots
+	from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
+	from utils_run_level import execute_EUDAQ_run_task_on_all_runs_within_batch
 	
 	set_my_template_as_default()
 	
@@ -224,7 +222,13 @@ if __name__=='__main__':
 	)
 	args = parser.parse_args()
 	
-	parse_waveforms_in_batch(
-		TB_batch_dn = DatanodeHandler(args.datanode),
-		force = args.force,
+	dn = DatanodeHandler(args.datanode)
+	execute_EUDAQ_run_task_on_all_runs_within_batch(
+		TB_batch_dn = dn,
+		func = parse_waveforms,
+		args = {_.datanode_name:dict(force=args.force) for _ in dn.list_subdatanodes_of_task('EUDAQ_runs')},
+		telegram_bot_reporter = SafeTelegramReporter4Loops(
+			bot_token = my_telegram_bots.robobot.token,
+			chat_id = my_telegram_bots.chat_ids['Robobot TCT setup'],
+		),
 	)

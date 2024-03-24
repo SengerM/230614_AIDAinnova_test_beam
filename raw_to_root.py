@@ -36,21 +36,12 @@ def raw_to_root(EUDAQ_run_dn:DatanodeHandler, container_id:str, force:bool=False
 		result.check_returncode()
 		logging.info(f'Successfully converted raw to root for {EUDAQ_run_dn.pseudopath} ✅')
 
-def raw_to_root_in_a_batch(TB_batch_dn:DatanodeHandler, container_id:str, force:bool=False, silent_root:bool=False):
-	TB_batch_dn.check_datanode_class('TB_batch')
-	logging.info(f'Processing {TB_batch_dn.pseudopath}...')
-	for EUDAQ_run_dn in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs'):
-		raw_to_root(
-			EUDAQ_run_dn = EUDAQ_run_dn,
-			container_id = container_id,
-			force = force,
-			silent_root = silent_root,
-		)
-	logging.info(f'Finished {TB_batch_dn.pseudopath} ✅')
-
 if __name__=='__main__':
 	import argparse
 	import sys
+	import my_telegram_bots # Secret tokens from my bots
+	from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
+	from utils_run_level import execute_EUDAQ_run_task_on_all_runs_within_batch
 	
 	logging.basicConfig(
 		stream = sys.stderr, 
@@ -83,9 +74,13 @@ if __name__=='__main__':
 	)
 	args = parser.parse_args()
 	
-	raw_to_root_in_a_batch(
-		DatanodeHandler(args.datanode),
-		force = args.force,
-		container_id = args.container_id,
-		silent_root = False,
+	dn = DatanodeHandler(args.datanode)
+	execute_EUDAQ_run_task_on_all_runs_within_batch(
+		TB_batch_dn = dn,
+		func = raw_to_root,
+		args = {_.datanode_name:dict(container_id=args.container_id, force=args.force, silent_root=False) for _ in dn.list_subdatanodes_of_task('EUDAQ_runs')},
+		telegram_bot_reporter = SafeTelegramReporter4Loops(
+			bot_token = my_telegram_bots.robobot.token,
+			chat_id = my_telegram_bots.chat_ids['Robobot TCT setup'],
+		),
 	)
