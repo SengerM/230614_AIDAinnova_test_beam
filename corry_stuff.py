@@ -333,7 +333,7 @@ def convert_tracks_root_file_to_easy_SQLite(EUDAQ_run_dn:DatanodeHandler, force:
 		check_datanode_class = 'EUDAQ_run',
 		check_required_tasks = 'corry_intersect_tracks_with_planes',
 	) as task_handler:
-		logging.info(f'Converting ROOT file with tracks into SQLite file for {task_handler.pseudopath}...')
+		logging.info(f'Converting ROOT file with tracks into SQLite file for {EUDAQ_run_dn.pseudopath}...')
 		path_to_root_file = EUDAQ_run_dn.path_to_directory_of_task('corry_intersect_tracks_with_planes')/'corry_output/TreeWriterTracks/tracks.root'
 		with uproot.open(path_to_root_file) as root_file:
 			with SQLiteDataFrameDumper(task_handler.path_to_directory_of_my_task/'tracks.sqlite', dump_after_n_appends=1e3) as dumper:
