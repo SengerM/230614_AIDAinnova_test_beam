@@ -142,7 +142,7 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 				if produce_control_plots_for_this_event:
 					fig = plot_waveform(waveform)
 					fig.update_layout(
-						title = f'n_event {n_event}, n_CAEN {n_CAEN} ({CAENs_names[n_CAEN]}), CAEN_n_channel {CAEN_n_channel}<br><sup>{bureaucrat.run_name}</sup>',
+						title = f'n_event {n_event}, n_CAEN {n_CAEN} ({CAENs_names[n_CAEN]}), CAEN_n_channel {CAEN_n_channel}',
 					)
 					fig.write_html(
 						path_to_directory_in_which_to_save_the_control_plots/f'n_event_{n_event}_n_CAEN_{n_CAEN}_CAEN_n_channel_{CAEN_n_channel}.html',
