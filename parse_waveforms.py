@@ -4,7 +4,7 @@ from signals.PeakSignal import PeakSignal, draw_in_plotly # https://github.com/S
 import numpy
 import pandas
 from huge_dataframe.SQLiteDataFrame import SQLiteDataFrameDumper # https://github.com/SengerM/huge_dataframe
-from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
+from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import plotly.graph_objects as go
 import logging
 import utils
@@ -162,58 +162,41 @@ def parse_waveforms_from_root_file_and_create_sqlite_database(root_file_path:Pat
 		CAENs_names.name = 'CAEN_name'
 		utils.save_dataframe(CAENs_names, name=sqlite_database_path.name.replace('.sqlite','_CAENs_names'), location=sqlite_database_path.parent)
 
-def parse_waveforms(bureaucrat:RunBureaucrat, force:bool=False):
+def parse_waveforms(EUDAQ_run_dn:DatanodeHandler, force:bool=False):
 	"""Parse the waveforms from a run and store the data in SQLite
 	databases.
 	
 	Arguments
 	---------
-	bureaucrat: RunBureaucrat
-		A bureaucrat pointing to the run for which to parse the waveforms.
+	EUDAQ_run_dn: DatanodeHandler
+		A `DatanodeHandler` pointing to the EUDAQ_run to be processed.
 	force: bool, default False
 		If `False` and the task `raw_to_root` was already executed successfully
 		for the run being handled by `bureaucrat`, nothing is done.
 	"""
-	bureaucrat.check_these_tasks_were_run_successfully(['raw','raw_to_root'])
-	
-	if force==False and bureaucrat.was_task_run_successfully('parse_waveforms'):
+	if force==False and EUDAQ_run_dn.was_task_run_successfully('parse_waveforms'):
 		return
 	
 	NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS = 5
 	
-	with bureaucrat.handle_task('parse_waveforms') as employee:
+	with EUDAQ_run_dn.handle_task('parse_waveforms', check_datanode_class='EUDAQ_run', check_required_tasks='raw_to_root') as parse_waveforms_task:
+		logging.info(f'Parsing waveforms in {EUDAQ_run_dn.pseudopath}...')
 		parse_waveforms_from_root_file_and_create_sqlite_database(
-			root_file_path = bureaucrat.path_to_directory_of_task('raw_to_root')/f'{bureaucrat.run_name}.root',
-			sqlite_database_path = employee.path_to_directory_of_my_task/f'{bureaucrat.run_name}.sqlite',
+			root_file_path = EUDAQ_run_dn.path_to_directory_of_task('raw_to_root')/f'{EUDAQ_run_dn.datanode_name}.root',
+			sqlite_database_path = parse_waveforms_task.path_to_directory_of_my_task/f'parsed_from_waveforms.sqlite',
 			number_of_events_for_which_to_produce_control_plots = NUMBER_OF_EVENTS_FOR_WHICH_TO_PRODUCE_CONTROL_PLOTS,
 		)
-		logging.info(f'Successfully parsed waveforms for {bureaucrat.pseudopath} ✅')
+		logging.info(f'Successfully parsed waveforms in {EUDAQ_run_dn.pseudopath} ✅')
 
-def read_parsed_from_waveforms_from_batch(batch:RunBureaucrat, DUT_name:str, variables:list=['Amplitude (V)'], additional_SQL_selection:str=None, n_events:int=None):
-	batch.check_these_tasks_were_run_successfully('runs')
-	
-	logging.info(f'Reading parsed from waveforms from {batch.pseudopath} for DUT_name={repr(DUT_name)} and variables {variables}...')
-	
-	runs = batch.list_subruns_of_task('runs')
-	data = []
-	for run in runs:
-		df = read_parsed_from_waveforms_from_run(
-			TB_run = run,
-			DUT_name = DUT_name,
-			variables = variables,
-			additional_SQL_selection = additional_SQL_selection,
-			n_events = int(n_events/len(runs)) if isinstance(n_events, int) else None,
-		)
-		df = pandas.concat({int(run.run_name.split('_')[0].replace('run','')): df}, names=['n_run'])
-		data.append(df)
-	return pandas.concat(data)
+def parse_waveforms_in_batch(TB_batch_dn:DatanodeHandler, force:bool=False):
+	TB_batch_dn.check_datanode_class('TB_batch')
+	for EUDAQ_run_dn in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs'):
+		parse_waveforms(EUDAQ_run_dn=EUDAQ_run_dn, force=force)
 
 if __name__=='__main__':
 	import argparse
 	import sys
 	from plotly_utils import set_my_template_as_default
-	import my_telegram_bots # Secret tokens from my bots
-	from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loops # https://github.com/SengerM/progressreporting
 	
 	set_my_template_as_default()
 	
@@ -225,11 +208,11 @@ if __name__=='__main__':
 	)
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--dir',
+	parser.add_argument('--datanode',
 		metavar = 'path', 
-		help = 'Path to the base measurement directory.',
+		help = 'Path to a datanode.',
 		required = True,
-		dest = 'directory',
+		dest = 'datanode',
 		type = str,
 	)
 	parser.add_argument(
@@ -239,19 +222,9 @@ if __name__=='__main__':
 		dest = 'force',
 		action = 'store_true'
 	)
-	
 	args = parser.parse_args()
-	bureaucrat = RunBureaucrat(Path(args.directory))
 	
-	def _parse_waveforms(bureaucrat):
-		parse_waveforms(bureaucrat, force=args.force)
-	
-	utils.guess_where_how_to_run(
-		bureaucrat = bureaucrat,
-		raw_level_f = _parse_waveforms,
-		# All the below is optional, it can be removed.
-		telegram_bot_reporter = SafeTelegramReporter4Loops(
-			bot_token = my_telegram_bots.robobot.token,
-			chat_id = my_telegram_bots.chat_ids['Robobot TCT setup'],
-		),
+	parse_waveforms_in_batch(
+		TB_batch_dn = DatanodeHandler(args.datanode),
+		force = args.force,
 	)
