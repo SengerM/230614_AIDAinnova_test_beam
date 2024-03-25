@@ -2,12 +2,12 @@ from pathlib import Path
 from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import numpy
 import pandas
-import utils_run_level
 import utils
 import logging
 import plotly.graph_objects as go
 import plotly.express as px
 import dominate # https://github.com/Knio/dominate
+import parse_waveforms
 
 def setup_batch_info(TB_batch_dn:DatanodeHandler):
 	"""Add some batch-wise information needed for the analysis, like
@@ -204,92 +204,92 @@ def load_setup_configuration_info(TB_batch_dn:DatanodeHandler)->pandas.DataFrame
 	
 	return signals_connections
 
-# ~ def load_parsed_from_waveforms(TB_batch:RunBureaucrat, load_this:dict, variables:list=None)->pandas.DataFrame:
-	# ~ """Load data parsed from the waveforms for all the runs within a batch.
+def load_parsed_from_waveforms(TB_batch_dn:DatanodeHandler, load_this:dict, variables:list=None)->pandas.DataFrame:
+	"""Load data parsed from the waveforms for all the runs within a batch.
 	
-	# ~ Arguments
-	# ~ ---------
-	# ~ TB_batch: RunBureaucrat
-		# ~ A bureaucrat pointing to the batch from which to load the data.
-	# ~ load_this: dict
-		# ~ A dictionary of the form
-		# ~ ```
-		# ~ {
-			# ~ DUT_name_rowcol: conditions,
-		# ~ }
-		# ~ ```
-		# ~ where `DUT_name_rowcol` is a string, e.g. `'TI123 (0,1)'` and 
-		# ~ `conditions` is an SQL query with the cuts to apply to the different
-		# ~ variables available, e.g.:
-		# ~ ```
-		# ~ {
-			# ~ 'TI123 (0,1)': '`Amplitude (V)` < -5e-3 AND t_50 (s) > 50e-9',
-			# ~ 'TI222 (1,1)': '`Amplitude (V)` < -10e-3 AND t_50 (s) > 50e-9',
-		# ~ }
-		# ~ ```
-	# ~ variables: list of str
-		# ~ A list of the variables to be loaded, e.g. `['Amplitude (V)','Collected charge (V s)']`.
+	Arguments
+	---------
+	TB_batch_dn: DatanodeHandler
+		A `DatanodeHandler` pointing to the batch from which to load the data.
+	load_this: dict
+		A dictionary of the form
+		```
+		{
+			DUT_name_rowcol: conditions,
+		}
+		```
+		where `DUT_name_rowcol` is a string, e.g. `'TI123 (0,1)'` and 
+		`conditions` is an SQL query with the cuts to apply to the different
+		variables available, e.g.:
+		```
+		{
+			'TI123 (0,1)': '`Amplitude (V)` < -5e-3 AND `t_50 (s)` > 50e-9',
+			'TI222 (1,1)': '`Amplitude (V)` < -10e-3 AND `t_50 (s)` > 50e-9',
+		}
+		```
+	variables: list of str
+		A list of the variables to be loaded, e.g. `['Amplitude (V)','Collected charge (V s)']`.
 	
-	# ~ Returns
-	# ~ -------
-	# ~ parsed_from_waveforms: pandas.DataFrame
-		# ~ A data frame of the form
-		# ~ ```
-		                               # ~ Amplitude (V)  Collected charge (V s)
-		# ~ n_run n_event DUT_name_rowcol                                       
-		# ~ 42    38      TI228 (0,0)          -0.005629           -4.103537e-12
-			  # ~ 49      TI228 (1,0)          -0.005816           -2.829203e-12
-			  # ~ 53      TI228 (1,0)          -0.070297           -1.066991e-10
-			  # ~ 66      TI228 (1,0)          -0.074181           -1.142252e-10
-			  # ~ 88      TI228 (0,0)          -0.005203           -2.491007e-12
-		# ~ ...                                      ...                     ...
-		# ~ 38    11695   TI228 (0,0)          -0.005421           -4.191143e-12
-			  # ~ 11697   TI228 (0,0)          -0.101138           -1.509368e-10
-			  # ~ 11703   TI228 (1,0)          -0.088648           -1.263468e-10
-			  # ~ 11732   TI228 (0,0)          -0.005097           -4.018176e-12
-			  # ~ 11782   TI228 (0,0)          -0.005678           -3.041788e-12
+	Returns
+	-------
+	parsed_from_waveforms: pandas.DataFrame
+		A data frame of the form
+		```
+		                               Amplitude (V)  Collected charge (V s)
+		n_run n_event DUT_name_rowcol                                       
+		42    38      TI228 (0,0)          -0.005629           -4.103537e-12
+			  49      TI228 (1,0)          -0.005816           -2.829203e-12
+			  53      TI228 (1,0)          -0.070297           -1.066991e-10
+			  66      TI228 (1,0)          -0.074181           -1.142252e-10
+			  88      TI228 (0,0)          -0.005203           -2.491007e-12
+		...                                      ...                     ...
+		38    11695   TI228 (0,0)          -0.005421           -4.191143e-12
+			  11697   TI228 (0,0)          -0.101138           -1.509368e-10
+			  11703   TI228 (1,0)          -0.088648           -1.263468e-10
+			  11732   TI228 (0,0)          -0.005097           -4.018176e-12
+			  11782   TI228 (0,0)          -0.005678           -3.041788e-12
 
-		# ~ [17854 rows x 2 columns]
+		[17854 rows x 2 columns]
 
-		# ~ ```
+		```
 		
-	# ~ """
-	# ~ TB_batch.check_these_tasks_were_run_successfully('EUDAQ_runs')
+	"""
+	TB_batch_dn.check_datanode_class('TB_batch')
 	
-	# ~ logging.info(f'Loading {variables} for {TB_batch.pseudopath} for {sorted(load_this)}...')
+	logging.info(f'Loading {variables} from "{TB_batch_dn.pseudopath}" for {sorted(load_this)}...')
 	
-	# ~ setup_config = load_setup_configuration_info(TB_batch)
+	setup_config = load_setup_configuration_info(TB_batch_dn)
 	
-	# ~ SQL_query_where = []
-	# ~ for DUT_name_rowcol, this_DUT_SQL_query in load_this.items():
-		# ~ if DUT_name_rowcol not in set(setup_config['DUT_name_rowcol']):
-			# ~ raise ValueError(f'Received DUT_name_rowcol {repr(DUT_name_rowcol)}, but only allowed possibilities for batch {TB_batch.pseudopath} are {sorted(set(setup_config["DUT_name_rowcol"]))}')
-		# ~ setup_config_this_DUT = setup_config.query(f'DUT_name_rowcol == "{DUT_name_rowcol}"')
-		# ~ if len(setup_config_this_DUT) != 1:
-			# ~ raise ValueError('This should never have happened! Check! This means that there is more than one pixel with the same `DUT_name_rowcol` which is impossible.')
-		# ~ setup_config_this_DUT = setup_config_this_DUT.iloc[0] # Convert to Series
-		# ~ CAEN_n_channel = setup_config_this_DUT['CAEN_n_channel']
-		# ~ n_CAEN = setup_config_this_DUT['n_CAEN']
-		# ~ _ = f'n_CAEN=={n_CAEN} AND CAEN_n_channel=={CAEN_n_channel}'
-		# ~ if this_DUT_SQL_query is not None:
-			# ~ _ += f' AND ({this_DUT_SQL_query})'
-		# ~ SQL_query_where.append(_)
-	# ~ SQL_query_where = ') or ('.join(SQL_query_where)
-	# ~ SQL_query_where = f'({SQL_query_where})'
+	SQL_query_where = []
+	for DUT_name_rowcol, this_DUT_SQL_query in load_this.items():
+		if DUT_name_rowcol not in set(setup_config['DUT_name_rowcol']):
+			raise ValueError(f'Received DUT_name_rowcol {repr(DUT_name_rowcol)}, but only allowed possibilities for batch "{TB_batch_dn.pseudopath}" are {sorted(set(setup_config["DUT_name_rowcol"]))}')
+		setup_config_this_DUT = setup_config.query(f'DUT_name_rowcol == "{DUT_name_rowcol}"')
+		if len(setup_config_this_DUT) != 1:
+			raise ValueError('This should never have happened! Check! This means that there is more than one pixel with the same `DUT_name_rowcol` which is impossible.')
+		setup_config_this_DUT = setup_config_this_DUT.iloc[0] # Convert to Series
+		CAEN_n_channel = setup_config_this_DUT['CAEN_n_channel']
+		n_CAEN = setup_config_this_DUT['n_CAEN']
+		_ = f'n_CAEN=={n_CAEN} AND CAEN_n_channel=={CAEN_n_channel}'
+		if this_DUT_SQL_query is not None:
+			_ += f' AND ({this_DUT_SQL_query})'
+		SQL_query_where.append(_)
+	SQL_query_where = ') or ('.join(SQL_query_where)
+	SQL_query_where = f'({SQL_query_where})'
 	
-	# ~ parsed_from_waveforms = {}
-	# ~ for run in TB_batch.list_subruns_of_task('EUDAQ_runs'):
-		# ~ n_run = int(run.run_name.split('_')[0].replace('run',''))
-		# ~ parsed_from_waveforms[n_run] = utils_run_level.load_parsed_from_waveforms(
-			# ~ TB_run = run,
-			# ~ where = SQL_query_where,
-			# ~ variables = variables,
-		# ~ )
-	# ~ parsed_from_waveforms = pandas.concat(parsed_from_waveforms, names=['n_run'])
-	# ~ parsed_from_waveforms = parsed_from_waveforms.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'], on=['n_CAEN','CAEN_n_channel'])
-	# ~ parsed_from_waveforms.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
-	# ~ parsed_from_waveforms.set_index('DUT_name_rowcol', append=True, inplace=True)
-	# ~ return parsed_from_waveforms
+	parsed_from_waveforms = {}
+	for EUDAQ_run_dn in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs'):
+		n_run = int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run',''))
+		parsed_from_waveforms[n_run] = parse_waveforms.load_parsed_from_waveforms(
+			EUDAQ_run_dn = EUDAQ_run_dn,
+			where = SQL_query_where,
+			variables = variables,
+		)
+	parsed_from_waveforms = pandas.concat(parsed_from_waveforms, names=['n_run'])
+	parsed_from_waveforms = parsed_from_waveforms.join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'], on=['n_CAEN','CAEN_n_channel'])
+	parsed_from_waveforms.reset_index(['n_CAEN','CAEN_n_channel'], drop=True, inplace=True)
+	parsed_from_waveforms.set_index('DUT_name_rowcol', append=True, inplace=True)
+	return parsed_from_waveforms
 
 # ~ def load_hits(TB_batch:RunBureaucrat, DUTs_and_hit_criterions:dict)->pandas.DataFrame:
 	# ~ """Load the hits on a set of DUTs according to some criterions.

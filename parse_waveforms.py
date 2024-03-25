@@ -188,6 +188,22 @@ def parse_waveforms(EUDAQ_run_dn:DatanodeHandler, force:bool=False):
 		)
 		logging.info(f'Successfully parsed waveforms in {EUDAQ_run_dn.pseudopath} ✅')
 
+def load_parsed_from_waveforms(EUDAQ_run_dn:DatanodeHandler, where:str, variables:list=None):
+	EUDAQ_run_dn.check_datanode_class('EUDAQ_run')
+	
+	logging.info(f'Reading {variables} from {EUDAQ_run_dn.pseudopath}...')
+	
+	if variables is not None:
+		variables = ',' + ','.join([f'`{_}`' for _ in variables])
+	else:
+		variables = ''
+	data = pandas.read_sql(
+		f'SELECT n_event,n_CAEN,CAEN_n_channel{variables} FROM dataframe_table WHERE {where}',
+		con = sqlite3.connect(EUDAQ_run_dn.path_to_directory_of_task('parse_waveforms')/f'parsed_from_waveforms.sqlite'),
+	)
+	data.set_index(['n_event','n_CAEN','CAEN_n_channel'], inplace=True)
+	return data
+
 if __name__=='__main__':
 	import argparse
 	import sys

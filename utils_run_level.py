@@ -57,20 +57,3 @@ def execute_EUDAQ_run_task_on_all_runs_within_batch(TB_batch_dn:DatanodeHandler,
 			# ~ raise RuntimeError(f'Failed to load tracks only from events with track multiplicity 1...')
 	
 	# ~ return tracks
-
-# ~ def load_parsed_from_waveforms(TB_run:RunBureaucrat, where:str, variables:list=None):
-	# ~ TB_run.check_these_tasks_were_run_successfully(['raw','parse_waveforms'])
-	
-	# ~ logging.info(f'Reading {variables} from {TB_run.pseudopath}...')
-	
-	# ~ if variables is not None:
-		# ~ variables = ',' + ','.join([f'`{_}`' for _ in variables])
-	# ~ else:
-		# ~ variables = ''
-	# ~ data = pandas.read_sql(
-		# ~ f'SELECT n_event,n_CAEN,CAEN_n_channel{variables} FROM dataframe_table WHERE {where}',
-		# ~ con = sqlite3.connect(TB_run.path_to_directory_of_task('parse_waveforms')/f'{TB_run.run_name}.sqlite'),
-	# ~ )
-	# ~ data.set_index(['n_event','n_CAEN','CAEN_n_channel'], inplace=True)
-	# ~ return data
-
