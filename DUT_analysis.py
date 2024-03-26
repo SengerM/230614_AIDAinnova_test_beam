@@ -42,20 +42,36 @@ def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:
 				)
 		logging.info(f'DUT analysis {repr(str(DUT_analysis_dn.pseudopath))} was created. ✅')
 
-def create_voltage_point(DUT_analysis_dn:DatanodeHandler, voltage:int, EUDAQ_runs:list):
-	"""Create a new voltage point and link the runs.
+def create_voltage_point(DUT_analysis_dn:DatanodeHandler, voltage:int, EUDAQ_runs:set):
+	"""Create a new voltage point within a DUT analysis.
 	
 	Arguments
 	---------
-	DUT_analysis: RunBureaucrat
-		A bureaucrat pointing to a DUT analysis in which to create the new voltage
-		point.
+	DUT_analysis_dn: DatanodeHandler
+		A `DatanodeHandler` pointing to a DUT analysis in which to create
+		the new voltage	point.
 	voltage: int
 		The voltage value, e.g. `150`.
-	EUDAQ_runs: list of int
-		A list of int with the EUDAQ run numbers to be linked to this voltage.
+	EUDAQ_runs: set of int
+		A set of int with the EUDAQ run numbers to be linked to this voltage.
 	"""
-	raise NotImplementedError()
+	with DUT_analysis_dn.handle_task('voltages', check_datanode_class='DUT_analysis', keep_old_data=True) as task:
+		TB_batch_dn = DUT_analysis_dn.parent
+		EUDAQ_runs_within_this_batch = {int(r.datanode_name.split('_')[0].replace('run','')):r.datanode_name for r in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs')}
+		
+		if any([_ not in EUDAQ_runs_within_this_batch for _ in EUDAQ_runs]):
+			raise RuntimeError(f'At least one of the runs {EUDAQ_runs} is not available in batch {repr(str(TB_batch_dn.pseudopath))}. Available runs found are: {sorted(EUDAQ_runs_within_this_batch)}. ')
+		
+		voltage_dn = task.create_subdatanode(f'{voltage}V', subdatanode_class='voltage_point')
+		
+		with voltage_dn.handle_task('EUDAQ_runs') as EUDAQ_runs_task:
+			with open(EUDAQ_runs_task.path_to_directory_of_my_task/'runs.json', 'w') as ofile:
+				json.dump(
+					[EUDAQ_runs_within_this_batch[_] for _ in EUDAQ_runs],
+					ofile,
+					indent = '\t',
+				)
+	logging.info(f'Voltage point {repr(str(voltage_dn.pseudopath))} was created. ✅')
 
 if __name__ == '__main__':
 	import sys
@@ -77,27 +93,21 @@ if __name__ == '__main__':
 		dest = 'datanode',
 		type = Path,
 	)
-	parser.add_argument('--DUT_name',
-		help = 'Name for the DUT analysis',
-		dest = 'DUT_name',
-		type = str,
-	)
-	parser.add_argument('--plane_number',
-		help = 'Plane number of this DUT.',
-		dest = 'plane_number',
+	parser.add_argument('--voltage',
+		help = 'Value of voltage.',
+		dest = 'voltage',
 		type = int,
 	)
-	parser.add_argument('--chubut_channel_numbers',
-		help = 'Chubut channels belonging to this DUT.',
-		dest = 'chubut_channel_numbers',
+	parser.add_argument('--EUDAQ_runs',
+		help = 'EUDAQ run numbers as integers',
+		dest = 'EUDAQ_runs',
 		type = int,
 		nargs = '+',
 	)
 	args = parser.parse_args()
 	
-	create_DUT_analysis(
-		TB_batch_dn = DatanodeHandler(args.datanode), 
-		DUT_name = args.DUT_name,
-		plane_number = args.plane_number,
-		chubut_channel_numbers = args.chubut_channel_numbers,
+	create_voltage_point(
+		DUT_analysis_dn = DatanodeHandler(args.datanode), 
+		voltage = args.voltage,
+		EUDAQ_runs = args.EUDAQ_runs,
 	)
