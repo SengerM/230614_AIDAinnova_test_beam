@@ -6,6 +6,7 @@ import json
 import pandas
 import utils_batch_level
 import DUT_analysis
+import plotly.express as px
 
 def load_waveforms_data_for_voltage_point(voltage_point_dn:DatanodeHandler, where:str=None, variables:list=None):
 	voltage_point_dn.check_datanode_class('voltage_point')
@@ -50,15 +51,50 @@ def load_waveforms_data_for_voltage_point(voltage_point_dn:DatanodeHandler, wher
 	
 	return loaded_data
 
-# ~ def plot_waveforms_distributions(voltage_point_dn:DatanodeHandler, max_points_to_plot=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
-	# ~ with voltage_point_dn.handle_task('plot_waveforms_distributions', check_datanode_class='voltage_point', check_required_tasks='EUDAQ_runs') as task:
-		# ~ setup_config = utils_batch_level.load_setup_configuration_info(voltage_point_dn.parent.parent)
-		# ~ setup_config
-		# ~ save_histograms_here = task.path_to_directory_of_my_task/'histograms'
-		# ~ save_histograms_here.mkdir()
-		# ~ for var in histograms:
-			# ~ data = load_waveforms_data_for_voltage_point(voltage_point_dn=voltage_point_dn, variables=[var])
+def plot_waveforms_distributions(voltage_point_dn:DatanodeHandler, max_points_to_plot=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
+	with voltage_point_dn.handle_task('plot_waveforms_distributions', check_datanode_class='voltage_point', check_required_tasks='EUDAQ_runs') as task:
+		setup_config = utils_batch_level.load_setup_configuration_info(voltage_point_dn.parent.parent)
+		DUT_config_metadata = DUT_analysis.load_DUT_configuration_metadata(voltage_point_dn.parent)
+		setup_config = setup_config.query(f'plane_number=={DUT_config_metadata["plane_number"]} and chubut_channel in {sorted(DUT_config_metadata["chubut_channels_numbers"])}') # Keep only relevant part for this DUT.
+		setup_config.set_index(['n_CAEN','CAEN_n_channel'], inplace=True)
+		
+		save_histograms_here = task.path_to_directory_of_my_task/'histograms'
+		save_histograms_here.mkdir()
+		for var in histograms:
+			data = load_waveforms_data_for_voltage_point(voltage_point_dn=voltage_point_dn, variables=[var])
+			data = data.join(setup_config['DUT_name_rowcol'])
 			
+			logging.info(f'Plotting distribution of {var} in {voltage_point_dn.pseudopath}...')
+			fig = px.ecdf(
+				title = f'{var.split("(")[0]} distribution<br><sup>{voltage_point_dn.pseudopath}</sup>',
+				data_frame = data.sample(n=max_points_to_plot).reset_index().sort_values('DUT_name_rowcol'),
+				x = var,
+				marginal = 'histogram',
+				color = 'DUT_name_rowcol',
+			)
+			fig.write_html(
+				save_histograms_here/f'{var}.html',
+				include_plotlyjs = 'cdn',
+			)
+		
+		save_scatter_plots_here = task.path_to_directory_of_my_task/'scatter_plots'
+		save_scatter_plots_here.mkdir()
+		for xvar, yvar in scatter_plots:
+			data = load_waveforms_data_for_voltage_point(voltage_point_dn=voltage_point_dn, variables=[xvar,yvar])
+			data = data.join(setup_config['DUT_name_rowcol'])
+			
+			logging.info(f'Plotting {yvar} vs {xvar} scatter plot in {voltage_point_dn.pseudopath}...')
+			fig = px.scatter(
+				title = f'{yvar.split("(")[0]} vs {xvar.split("(")[0]}<br><sup>{voltage_point_dn.pseudopath}</sup>',
+				data_frame = data.sample(n=max_points_to_plot).reset_index().sort_values('DUT_name_rowcol'),
+				x = xvar,
+				y = yvar,
+				color = 'DUT_name_rowcol',
+			)
+			fig.write_html(
+				save_scatter_plots_here/f'{yvar} vs {xvar}.html',
+				include_plotlyjs = 'cdn',
+			)
 
 if __name__ == '__main__':
 	import sys
@@ -84,10 +120,4 @@ if __name__ == '__main__':
 	)
 	args = parser.parse_args()
 	
-	data = load_waveforms_data_for_voltage_point(
-		voltage_point_dn = DatanodeHandler(args.datanode),
-		variables = ['Amplitude (V)'],
-		where = '`Amplitude (V)` < -.2',
-	)
-	
-	print(data)
+	plot_waveforms_distributions(DatanodeHandler(args.datanode))
