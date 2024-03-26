@@ -1,47 +1,64 @@
 from pathlib import Path
-from the_bureaucrat.bureaucrats import RunBureaucrat # https://github.com/SengerM/the_bureaucrat
-import pandas
+from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import logging
+from parse_waveforms import load_parsed_from_waveforms_from_EUDAQ_run
+import json
+import pandas
+import utils_batch_level
+import DUT_analysis
 
-def create_voltage_point(TB_batch:RunBureaucrat, voltage:int, EUDAQ_runs:list):
-	"""Create a new voltage point and link the runs.
+def load_waveforms_data_for_voltage_point(voltage_point_dn:DatanodeHandler, where:str=None, variables:list=None):
+	voltage_point_dn.check_datanode_class('voltage_point')
 	
-	Arguments
-	---------
-	TB_batch: RunBureaucrat
-		A bureaucrat pointing to the batch in which to create the new voltage
-		point.
-	voltage: int
-		The voltage value, e.g. `150`.
-	EUDAQ_runs: list of int
-		A list of int with the EUDAQ run numbers to be linked to this voltage.
-	"""
-	TB_batch.check_these_tasks_were_run_successfully(['EUDAQ_runs','batch_info'])
+	DUT_analysis_dn = voltage_point_dn.parent
+	DUT_analysis_dn.check_datanode_class('DUT_analysis')
 	
-	runs_within_this_batch = {int(_.run_name.split('_')[0].replace('run','')): _.run_name for _ in TB_batch.list_subruns_of_task('EUDAQ_runs')}
+	TB_batch_dn = DUT_analysis_dn.parent
+	TB_batch_dn.check_datanode_class('TB_batch')
 	
-	with TB_batch.handle_task('voltages', drop_old_data=False) as employee:
-		voltage_point = employee.create_subrun(f'{voltage}V', if_exists='skip')
-		logging.info(f'Voltage point created in {voltage_point.pseudopath}')
-		with voltage_point.handle_task('voltage_batch') as _:
-			with open(_.path_to_directory_of_my_task/'README.md','w') as ofile:
-				print(f'The sole purpose of this task, called "voltage_batch", is to indicate that this contains the data from a voltage batch, i.e. a constant voltage.', file=ofile)
-		with voltage_point.handle_task('EUDAQ_runs') as employee_voltage_runs:
-			path_to_subruns = employee_voltage_runs.path_to_directory_of_my_task/'subruns'
-			path_to_subruns.mkdir(exist_ok=True)
-			# Link the batch info:
-			if voltage_point.path_to_directory_of_task('batch_info').exists():
-				voltage_point.path_to_directory_of_task('batch_info').unlink()
-			voltage_point.path_to_directory_of_task('batch_info').symlink_to('../../../batch_info')
-			logging.info(f'`batch_info` linked inside {voltage_point.pseudopath}')
-			# Link the runs:
-			for n_run in EUDAQ_runs:
-				if n_run not in runs_within_this_batch.keys():
-					raise RuntimeError(f'Run number {n_run} not available in {TB_batch.pseudopath}. Available run numbers are {runs_within_this_batch.keys()}')
-				new_link_in = path_to_subruns/runs_within_this_batch[n_run]
-				link_to = f'../../../../../EUDAQ_runs/subruns/{runs_within_this_batch[n_run]}'
-				new_link_in.symlink_to(link_to)
-				logging.info(f'Linked {new_link_in.name} in {voltage_point.pseudopath}')
+	setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
+	
+	DUT_analysis_configuration_metadata = DUT_analysis.load_DUT_configuration_metadata(DUT_analysis_dn)
+	this_DUT_chubut_channels = DUT_analysis_configuration_metadata['chubut_channels_numbers']
+	this_DUT_plane_number = DUT_analysis_configuration_metadata['plane_number']
+	
+	
+	with open(voltage_point_dn.path_to_directory_of_task('EUDAQ_runs')/'runs.json', 'r') as ifile:
+		EUDAQ_runs_from_this_voltage = json.load(ifile)
+	if not isinstance(EUDAQ_runs_from_this_voltage, list) or len(EUDAQ_runs_from_this_voltage) == 0:
+		raise RuntimeError(f'No EUDAQ runs associated to this voltage...')
+	
+	setup_config_this_DUT = setup_config.query(f'plane_number=={this_DUT_plane_number} and chubut_channel in {sorted(this_DUT_chubut_channels)}')
+	
+	SQL_query_for_n_CAEN_and_CAEN_n_channel = ' or '.join([f'(n_CAEN=={row["n_CAEN"]} and CAEN_n_channel=={row["CAEN_n_channel"]})' for i,row in setup_config_this_DUT.iterrows()])
+	
+	if where is not None:
+		where = '(' + SQL_query_for_n_CAEN_and_CAEN_n_channel + ') and ' + where
+	else:
+		where = SQL_query_for_n_CAEN_and_CAEN_n_channel
+	
+	loaded_data = []
+	for EUDAQ_run_dn in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs'):
+		if EUDAQ_run_dn.datanode_name not in EUDAQ_runs_from_this_voltage:
+			continue
+		data = load_parsed_from_waveforms_from_EUDAQ_run(EUDAQ_run_dn, where=where, variables=variables)
+		data['EUDAQ_run'] = int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run',''))
+		data.set_index('EUDAQ_run', append=True, inplace=True)
+		loaded_data.append(data)
+	loaded_data = pandas.concat(loaded_data)
+	loaded_data = loaded_data.reorder_levels([loaded_data.index.names[-1]] + loaded_data.index.names[:-1])
+	
+	return loaded_data
+
+# ~ def plot_waveforms_distributions(voltage_point_dn:DatanodeHandler, max_points_to_plot=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
+	# ~ with voltage_point_dn.handle_task('plot_waveforms_distributions', check_datanode_class='voltage_point', check_required_tasks='EUDAQ_runs') as task:
+		# ~ setup_config = utils_batch_level.load_setup_configuration_info(voltage_point_dn.parent.parent)
+		# ~ setup_config
+		# ~ save_histograms_here = task.path_to_directory_of_my_task/'histograms'
+		# ~ save_histograms_here.mkdir()
+		# ~ for var in histograms:
+			# ~ data = load_waveforms_data_for_voltage_point(voltage_point_dn=voltage_point_dn, variables=[var])
+			
 
 if __name__ == '__main__':
 	import sys
@@ -58,31 +75,19 @@ if __name__ == '__main__':
 	set_my_template_as_default()
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--dir',
+	parser.add_argument('--datanode',
 		metavar = 'path', 
-		help = 'Path to a batch.',
+		help = 'Path to a datanode.',
 		required = True,
-		dest = 'directory',
+		dest = 'datanode',
 		type = Path,
-	)
-	parser.add_argument('--voltage',
-		metavar = 'V', 
-		help = 'Voltage value, as an integer number, e.g. 150.',
-		required = True,
-		dest = 'voltage',
-		type = int,
-	)
-	parser.add_argument('--EUDAQ_runs',
-		help = 'Runs numbers from EUDAQ that go with this voltage, e.g. `100 101 102`. Note they go as integer numbers.',
-		required = True,
-		dest = 'EUDAQ_runs',
-		type = int,
-		nargs = '+',
 	)
 	args = parser.parse_args()
 	
-	create_voltage_point(
-		TB_batch = RunBureaucrat(args.directory),
-		voltage = args.voltage,
-		EUDAQ_runs = args.EUDAQ_runs,
+	data = load_waveforms_data_for_voltage_point(
+		voltage_point_dn = DatanodeHandler(args.datanode),
+		variables = ['Amplitude (V)'],
+		where = '`Amplitude (V)` < -.2',
 	)
+	
+	print(data)
