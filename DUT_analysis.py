@@ -7,6 +7,7 @@ import json
 import utils_voltage_level
 import dominate
 import dominate.tags as tags
+import corry_stuff
 
 def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:int, chubut_channel_numbers:set):
 	"""Creates a datanode to handle the analysis of one DUT.
@@ -119,6 +120,68 @@ def plot_waveforms_distributions(DUT_analysis_dn:DatanodeHandler, max_points_to_
 				with open(save_plots_here/plot_file_name, 'w') as ofile:
 					print(doc, file=ofile)
 
+def load_hits_on_DUT_from_voltage_point(voltage_point_dn:DatanodeHandler):
+	"""Load all the hits on the DUT for this voltage point.
+	
+	Arguments
+	---------
+	voltage_point_dn: DatanodeHandler
+		A `DatanodeHandler` pointing to a voltage point, inside a DUT
+		analysis, inside a test beam batch.
+	
+	Returns
+	-------
+	hits: pandas.DataFrame
+		A data frame of the form
+		````
+		                          x (m)     y (m)
+		n_run n_event n_track                    
+		226   45      0       -0.002738  0.001134
+			  79      0       -0.002727 -0.002765
+			  92      0       -0.003044  0.001085
+			  128     0       -0.002434  0.000308
+			  132     0       -0.002659 -0.000086
+		...                         ...       ...
+		227   113475  2       -0.003013 -0.000015
+			  113478  0       -0.001994  0.000780
+			  113479  0       -0.001950 -0.000560
+			  113483  0       -0.002547  0.000459
+			  113487  0        0.001486 -0.002903
+
+		[24188 rows x 2 columns]
+		```
+	"""
+	voltage_point_dn.check_datanode_class('voltage_point')
+	
+	DUT_analysis_dn = voltage_point_dn.parent
+	DUT_analysis_dn.check_datanode_class('DUT_analysis')
+	
+	TB_batch_dn = DUT_analysis_dn.parent
+	TB_batch_dn.check_datanode_class('TB_batch')
+	
+	DUT_configuration_metadata = load_DUT_configuration_metadata(DUT_analysis_dn)
+	setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
+	
+	DUT_name_as_it_is_in_raw_files = set(setup_config.query(f'plane_number == {DUT_configuration_metadata["plane_number"]}')['DUT_name'])
+	if len(DUT_name_as_it_is_in_raw_files) != 1:
+		raise RuntimeError('I was expecting a unique DUT name per plane, but this does not seem to be the case... ')
+	DUT_name_as_it_is_in_raw_files = list(DUT_name_as_it_is_in_raw_files)[0]
+	
+	with open(voltage_point_dn.path_to_directory_of_task('EUDAQ_runs')/'runs.json', 'r') as ifile:
+		EUDAQ_runs = json.load(ifile)
+	if not isinstance(EUDAQ_runs, list) or len(EUDAQ_runs) == 0:
+		raise RuntimeError(f'Cannot read what are the EUDAQ runs for voltage point {repr(str(voltage_point_dn.pseudopath))}. ')
+	EUDAQ_runs = [dn for dn in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs') if dn.datanode_name in EUDAQ_runs]
+	
+	hits = []
+	for EUDAQ_run_dn in EUDAQ_runs:
+		_ = corry_stuff.load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn, DUT_name = DUT_name_as_it_is_in_raw_files)
+		_ = pandas.concat({int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run','')): _}, names=['n_run'])
+		hits.append(_)
+	hits = pandas.concat(hits)
+	
+	return hits
+
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -141,6 +204,6 @@ if __name__ == '__main__':
 	)
 	args = parser.parse_args()
 	
-	plot_waveforms_distributions(
-		DUT_analysis_dn = DatanodeHandler(args.datanode), 
+	load_hits_on_DUT_from_voltage_point(
+		voltage_point_dn = DatanodeHandler(args.datanode), 
 	)
