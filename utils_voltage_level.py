@@ -153,7 +153,7 @@ def load_hits_on_DUT(voltage_point_dn:DatanodeHandler):
 	hits = []
 	for EUDAQ_run_dn in EUDAQ_runs:
 		_ = corry_stuff.load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn, DUT_name = DUT_name_as_it_is_in_raw_files)
-		_ = pandas.concat({int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run','')): _}, names=['n_run'])
+		_ = pandas.concat({int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run','')): _}, names=['EUDAQ_run'])
 		hits.append(_)
 	hits = pandas.concat(hits)
 	
