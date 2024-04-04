@@ -160,6 +160,18 @@ def load_hits_on_DUT(voltage_point_dn:DatanodeHandler):
 	return hits
 
 def plot_hits(voltage_point_dn:DatanodeHandler, amplitude_threshold:float):
+	"""Plot hits projected onto the DUT.
+	
+	Arguments
+	---------
+	voltage_point_dn: DatanodeHandler
+		A `DatanodeHandler` pointing to a voltage point.
+	amplitude_threshold: float
+		Threshold in the amplitude to consider the activation of the pixels
+		in the DUT. The threshold is applied to negative values and the
+		sign of `amplitude_threshold` is ignored, i.e. this works in this way:
+		`'Amplitude (V)' < {-abs(amplitude_threshold)}`.
+	"""
 	with voltage_point_dn.handle_task('plot_hits', 'voltage_point') as task:
 		setup_config = utils_batch_level.load_setup_configuration_info(voltage_point_dn.parent.parent)
 		
