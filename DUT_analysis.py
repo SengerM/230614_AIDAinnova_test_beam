@@ -90,7 +90,6 @@ def load_DUT_configuration_metadata(DUT_analysis_dn:DatanodeHandler):
 	return loaded
 
 def plot_waveforms_distributions(DUT_analysis_dn:DatanodeHandler, max_points_to_plot_per_voltage=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
-	
 	with DUT_analysis_dn.handle_task('plot_waveforms_distributions', 'DUT_analysis', 'voltages') as task:
 		for voltage_dn in DUT_analysis_dn.list_subdatanodes_of_task('voltages'):
 			utils_voltage_level.plot_waveforms_distributions(
@@ -118,9 +117,20 @@ def plot_waveforms_distributions(DUT_analysis_dn:DatanodeHandler, max_points_to_
 						)
 				with open(save_plots_here/plot_file_name, 'w') as ofile:
 					print(doc, file=ofile)
+	logging.info(f'Finished plotting waveforms distributions in {DUT_analysis_dn.pseudopath} ✅')
 
 def plot_hits(DUT_analysis_dn:DatanodeHandler, amplitude_threshold:float):
+	"""Plot hits projected onto the DUT.
 	
+	Arguments
+	---------
+	DUT_analysis_dn: DatanodeHandler
+		A `DatanodeHandler` pointing to the DUT analysis datanode.
+	amplitude_threshold: float
+		Threshold in the amplitude to consider the activation of the pixels
+		in the DUT. For more details see the definition of the function
+		in `utils_voltage_level.py`.
+	"""
 	with DUT_analysis_dn.handle_task('plot_hits', 'DUT_analysis', 'voltages') as task:
 		for voltage_dn in DUT_analysis_dn.list_subdatanodes_of_task('voltages'):
 			utils_voltage_level.plot_hits(
@@ -141,6 +151,8 @@ def plot_hits(DUT_analysis_dn:DatanodeHandler, amplitude_threshold:float):
 				)
 		with open(task.path_to_directory_of_my_task/'hits.html', 'w') as ofile:
 			print(doc, file=ofile)
+		
+		logging.info(f'Finished plotting hits in {DUT_analysis_dn.pseudopath} ✅')
 
 if __name__ == '__main__':
 	import sys
@@ -157,13 +169,28 @@ if __name__ == '__main__':
 	set_my_template_as_default()
 	
 	parser = argparse.ArgumentParser()
-	parser.add_argument('--datanode',
+	parser.add_argument(
+		'--datanode',
 		help = 'Path to a TB_batch datanode.',
 		dest = 'datanode',
 		type = Path,
 	)
+	parser.add_argument(
+		'--plot_waveforms_distributions',
+		dest = 'plot_waveforms_distributions',
+		action = 'store_true',
+	)
+	parser.add_argument(
+		'--plot_hits',
+		dest = 'plot_hits',
+		action = 'store_true',
+	)
 	args = parser.parse_args()
 	
-	load_hits_on_DUT_from_voltage_point(
-		voltage_point_dn = DatanodeHandler(args.datanode), 
-	)
+	if args.plot_waveforms_distributions:
+		plot_waveforms_distributions(DatanodeHandler(args.datanode))
+	if args.plot_hits:
+		plot_hits(
+			DUT_analysis_dn = DatanodeHandler(args.datanode),
+			amplitude_threshold = .01
+		)
