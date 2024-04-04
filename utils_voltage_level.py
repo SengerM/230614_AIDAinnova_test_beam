@@ -159,6 +159,43 @@ def load_hits_on_DUT(voltage_point_dn:DatanodeHandler):
 	
 	return hits
 
+def plot_hits(voltage_point_dn:DatanodeHandler, amplitude_threshold:float):
+	with voltage_point_dn.handle_task('plot_hits', 'voltage_point') as task:
+		setup_config = utils_batch_level.load_setup_configuration_info(voltage_point_dn.parent.parent)
+		
+		DUT_above_threshold = load_waveforms_data(
+			voltage_point_dn = voltage_point_dn,
+			where = f'`Amplitude (V)` < {-abs(amplitude_threshold)} AND `Time over 50% (s)`>1e-9',
+		)
+		
+		tracks_on_DUT = load_hits_on_DUT(voltage_point_dn)
+		
+		for df in [DUT_above_threshold, tracks_on_DUT]:
+			df.reset_index(inplace=True)
+			df.set_index(['EUDAQ_run','n_event'], inplace=True)
+		
+		hits = DUT_above_threshold.join(tracks_on_DUT, on=['EUDAQ_run','n_event'], how='inner')
+		
+		hits = hits.reset_index(drop=False).set_index(['n_CAEN','CAEN_n_channel']).join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
+		
+		fig = px.scatter(
+			title = f'Hits on DUT<br><sup>{voltage_point_dn.pseudopath}, amplitude<{-amplitude_threshold*1e3:.0f} mV</sup>',
+			data_frame = hits.reset_index().sort_values('DUT_name_rowcol'),
+			x = 'x (m)',
+			y = 'y (m)',
+			color = 'DUT_name_rowcol',
+			hover_data = ['EUDAQ_run','n_event'],
+		)
+		fig.update_yaxes(
+			scaleanchor = "x",
+			scaleratio = 1,
+		)
+		fig.write_html(
+			task.path_to_directory_of_my_task/'hits.html',
+			include_plotlyjs = 'cdn',
+		)
+		logging.info(f'Plotted hits for {repr(str(voltage_point_dn.pseudopath))} ✅')
+
 if __name__ == '__main__':
 	import sys
 	import argparse
