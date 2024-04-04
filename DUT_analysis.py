@@ -119,6 +119,29 @@ def plot_waveforms_distributions(DUT_analysis_dn:DatanodeHandler, max_points_to_
 				with open(save_plots_here/plot_file_name, 'w') as ofile:
 					print(doc, file=ofile)
 
+def plot_hits(DUT_analysis_dn:DatanodeHandler, amplitude_threshold:float):
+	
+	with DUT_analysis_dn.handle_task('plot_hits', 'DUT_analysis', 'voltages') as task:
+		for voltage_dn in DUT_analysis_dn.list_subdatanodes_of_task('voltages'):
+			utils_voltage_level.plot_hits(
+				voltage_point_dn = voltage_dn,
+				amplitude_threshold = amplitude_threshold,
+			)
+		
+		voltages = sorted(DUT_analysis_dn.list_subdatanodes_of_task('voltages'), key=DatanodeHandler.datanode_name.__get__)
+		
+		doc = dominate.document(title=f'Hits on {DUT_analysis_dn.pseudopath}')
+		with doc:
+			tags.h1('Hits on DUT')
+			tags.h3(str(DUT_analysis_dn.pseudopath))
+			for voltage_dn in voltages:
+				tags.iframe(
+					src = Path('..')/((voltage_dn.path_to_directory_of_task('plot_hits')/'hits.html').relative_to(DUT_analysis_dn.path_to_datanode_directory)),
+					style = 'height: 90vh; width: 100%; min-height: 666px; min-width: 666px; border: 0;',
+				)
+		with open(task.path_to_directory_of_my_task/'hits.html', 'w') as ofile:
+			print(doc, file=ofile)
+
 if __name__ == '__main__':
 	import sys
 	import argparse
