@@ -19,7 +19,7 @@ if __name__ == '__main__':
 	
 	parser = argparse.ArgumentParser()
 	parser.add_argument('--datanode',
-		help = 'Path to a TB_batch datanode.',
+		help = 'Path to a `DUT_analysis` datanode.',
 		dest = 'datanode',
 		type = Path,
 	)
