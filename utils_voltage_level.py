@@ -9,7 +9,7 @@ import DUT_analysis
 import plotly.express as px
 import corry_stuff
 
-def load_waveforms_data_for_voltage_point(voltage_point_dn:DatanodeHandler, where:str=None, variables:list=None):
+def load_waveforms_data(voltage_point_dn:DatanodeHandler, where:str=None, variables:list=None):
 	voltage_point_dn.check_datanode_class('voltage_point')
 	
 	DUT_analysis_dn = voltage_point_dn.parent
@@ -62,7 +62,7 @@ def plot_waveforms_distributions(voltage_point_dn:DatanodeHandler, max_points_to
 		save_histograms_here = task.path_to_directory_of_my_task/'histograms'
 		save_histograms_here.mkdir()
 		for var in histograms:
-			data = load_waveforms_data_for_voltage_point(voltage_point_dn=voltage_point_dn, variables=[var])
+			data = load_waveforms_data(voltage_point_dn=voltage_point_dn, variables=[var])
 			data = data.join(setup_config['DUT_name_rowcol'])
 			
 			logging.info(f'Plotting distribution of {var} in {voltage_point_dn.pseudopath}...')
@@ -81,7 +81,7 @@ def plot_waveforms_distributions(voltage_point_dn:DatanodeHandler, max_points_to
 		save_scatter_plots_here = task.path_to_directory_of_my_task/'scatter_plots'
 		save_scatter_plots_here.mkdir()
 		for xvar, yvar in scatter_plots:
-			data = load_waveforms_data_for_voltage_point(voltage_point_dn=voltage_point_dn, variables=[xvar,yvar])
+			data = load_waveforms_data(voltage_point_dn=voltage_point_dn, variables=[xvar,yvar])
 			data = data.join(setup_config['DUT_name_rowcol'])
 			
 			logging.info(f'Plotting {yvar} vs {xvar} scatter plot in {voltage_point_dn.pseudopath}...')
@@ -97,7 +97,7 @@ def plot_waveforms_distributions(voltage_point_dn:DatanodeHandler, max_points_to
 				include_plotlyjs = 'cdn',
 			)
 
-def load_hits_on_DUT_from_voltage_point(voltage_point_dn:DatanodeHandler):
+def load_hits_on_DUT(voltage_point_dn:DatanodeHandler):
 	"""Load all the hits on the DUT for this voltage point.
 	
 	Arguments
