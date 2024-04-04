@@ -24,7 +24,6 @@ def load_waveforms_data(voltage_point_dn:DatanodeHandler, where:str=None, variab
 	this_DUT_chubut_channels = DUT_analysis_configuration_metadata['chubut_channels_numbers']
 	this_DUT_plane_number = DUT_analysis_configuration_metadata['plane_number']
 	
-	
 	with open(voltage_point_dn.path_to_directory_of_task('EUDAQ_runs')/'runs.json', 'r') as ifile:
 		EUDAQ_runs_from_this_voltage = json.load(ifile)
 	if not isinstance(EUDAQ_runs_from_this_voltage, list) or len(EUDAQ_runs_from_this_voltage) == 0:
@@ -91,6 +90,7 @@ def plot_waveforms_distributions(voltage_point_dn:DatanodeHandler, max_points_to
 				x = xvar,
 				y = yvar,
 				color = 'DUT_name_rowcol',
+				hover_data = ['EUDAQ_run','n_event'],
 			)
 			fig.write_html(
 				save_scatter_plots_here/f'{yvar} vs {xvar}.html',
