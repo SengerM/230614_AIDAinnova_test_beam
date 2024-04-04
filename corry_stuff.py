@@ -441,7 +441,6 @@ def load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, DUT_name:str):
 	data /= 1e3 # Convert to meters.
 	
 	return data
-	
 
 if __name__ == '__main__':
 	import sys
