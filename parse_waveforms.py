@@ -205,11 +205,11 @@ def load_parsed_from_waveforms_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, wher
 	
 	logging.info(f'Reading {variables} from {EUDAQ_run_dn.pseudopath}...')
 	
-	if len(variables) == 0:
-		variables = None
 	if isinstance(variables, str):
 		variables = [variables]
 	if variables is not None:
+		if len(variables) == 0:
+			variables = None
 		variables = ',' + ','.join([f'`{_}`' for _ in variables])
 	else:
 		variables = ''
