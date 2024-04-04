@@ -432,10 +432,12 @@ def load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, DUT_name:str):
 	CAEN_name_to_load = load_this['CAEN_name'].values[0] # We already checked that it has len() = 0 in the previous line
 	
 	# Here I will hardcode some things, I am sorry for doing this. I am finishing my PhD and have no time to investigate more.
+	plane_number_to_load += -1 # This seems to be an offset introduced in the indices at some point. If I add this, the contours of the DUTs as given by the tracks look sharper.
 	data = pandas.read_sql(
-		f'SELECT n_event,n_track,CAEN_{CAEN_name_to_load}_{plane_number_to_load-1}_X,CAEN_{CAEN_name_to_load}_{plane_number_to_load-1}_Y FROM dataframe_table WHERE RD53B_114_associateHit==1',
+		f'SELECT n_event,n_track,CAEN_{CAEN_name_to_load}_{plane_number_to_load}_X,CAEN_{CAEN_name_to_load}_{plane_number_to_load}_Y FROM dataframe_table WHERE RD53B_114_associateHit==1',
 		con = sqlite3.connect(EUDAQ_run_dn.path_to_directory_of_task('convert_tracks_root_file_to_easy_SQLite')/'tracks.sqlite'),
 	)
+	data['n_event'] += -2 # I found this just trying numbers until the correlation between the telescope data and the CAENs data made sense. This works for batch 8. A quick test with batch 7 showed that +3 worked instead.
 	data.set_index(['n_event','n_track'], inplace=True)
 	data.rename(columns={col: f'{col[-1].lower()} (m)' for col in data.columns}, inplace=True)
 	data /= 1e3 # Convert to meters.
