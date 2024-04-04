@@ -14,6 +14,7 @@ import json
 import uproot
 import numpy
 import utils_batch_level
+import json
 
 def replace_arguments_in_file_template(file_template:Path, output_file:Path, arguments:dict):
 	"""Given a file template with arguments denoted by 'ASD(argument_name)DSA',
@@ -383,7 +384,7 @@ def corry_do_all_steps_in_some_run(EUDAQ_run_dn:DatanodeHandler, corry_container
 	corry_intersect_tracks_with_planes(EUDAQ_run_dn=EUDAQ_run_dn, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	convert_tracks_root_file_to_easy_SQLite(EUDAQ_run_dn=EUDAQ_run_dn, force=force)
 
-def load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, DUT_name:str):
+def load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, DUT_name:str, apply_EUDAQ_offset_to_fix_bug:bool=True):
 	"""Load all tracks from one EUDAQ run, which have a hit in the CROC 
 	(i.e. that have `RD53B_114_associateHit==1`).
 	
@@ -393,6 +394,10 @@ def load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, DUT_name:str):
 		A `DatanodeHandler` pointing to an `EUDAQ_run` datanode.
 	DUT_name: str
 		The name of the DUT for which to load the hits.
+	apply_EUDAQ_offset_to_fix_bug: bool, default True
+		Normally you would not use this, and keep it `True`. This will
+		require that you previously run the `find_EUDAQ_offset` task in
+		this `EUDAQ_run_dn`.
 	
 	Returns
 	-------
@@ -437,7 +442,10 @@ def load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, DUT_name:str):
 		f'SELECT n_event,n_track,CAEN_{CAEN_name_to_load}_{plane_number_to_load}_X,CAEN_{CAEN_name_to_load}_{plane_number_to_load}_Y FROM dataframe_table WHERE RD53B_114_associateHit==1',
 		con = sqlite3.connect(EUDAQ_run_dn.path_to_directory_of_task('convert_tracks_root_file_to_easy_SQLite')/'tracks.sqlite'),
 	)
-	data['n_event'] += -2 # I found this just trying numbers until the correlation between the telescope data and the CAENs data made sense. This works for batch 8. A quick test with batch 7 showed that +3 worked instead.
+	if apply_EUDAQ_offset_to_fix_bug == True:
+		with open(EUDAQ_run_dn.path_to_directory_of_task('find_EUDAQ_offset')/'offset.json','r') as ifile:
+			EUDAQ_bug_offset = json.load(ifile)
+		data['n_event'] += EUDAQ_bug_offset # I found this just trying numbers until the correlation between the telescope data and the CAENs data made sense. This works for batch 8. A quick test with batch 7 showed that +3 worked instead.
 	data.set_index(['n_event','n_track'], inplace=True)
 	data.rename(columns={col: f'{col[-1].lower()} (m)' for col in data.columns}, inplace=True)
 	data /= 1e3 # Convert to meters.
