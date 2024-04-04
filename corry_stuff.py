@@ -442,6 +442,11 @@ def load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, DUT_name:str):
 	data.rename(columns={col: f'{col[-1].lower()} (m)' for col in data.columns}, inplace=True)
 	data /= 1e3 # Convert to meters.
 	
+	tracks_multiplicity = data[data.columns[0]].groupby('n_event').count()
+	tracks_multiplicity.name = 'tracks_multiplicity'
+	
+	data = data.loc[tracks_multiplicity[tracks_multiplicity==1].index] # Drop track multiplicity > 1
+	
 	return data
 
 if __name__ == '__main__':
