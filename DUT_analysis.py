@@ -30,8 +30,8 @@ def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:
 		setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
 		if plane_number not in setup_config['plane_number']:
 			raise RuntimeError(f'`plane_number` {plane_number} not found in the setup_config from batch {repr(str(TB_batch_dn.pseudopath))}. ')
-		if any([ch not in setup_config.query(f'plane_number=={plane_number}')['chubut_channel'] for ch in chubut_channel_numbers]):
-			raise RuntimeError(f'At least one `chubut_channel_numbers` {chubut_channel_numbers} not present in the setup_config of batch {repr(str(TB_batch_dn.pseudopath))}. ')
+		if any([ch not in setup_config.query(f'plane_number=={plane_number}')['chubut_channel'].values for ch in chubut_channel_numbers]):
+			raise RuntimeError(f'At least one `chubut_channel_numbers` {chubut_channel_numbers} not present in the setup_config of batch {repr(str(TB_batch_dn.pseudopath))} for plane number {plane_number}. ')
 		DUT_analysis_dn = task_handler.create_subdatanode(DUT_name, subdatanode_class='DUT_analysis')
 		with DUT_analysis_dn.handle_task('setup_config_metadata') as setup_config_metadata_task:
 			with open(setup_config_metadata_task.path_to_directory_of_my_task/'metadata.json', 'w') as ofile:
