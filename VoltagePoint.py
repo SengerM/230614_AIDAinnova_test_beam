@@ -15,7 +15,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 	def parent(self):
 		return super().parent.as_type(DUT_analysis.DatanodeHandlerDUTAnalysis) # I expect voltage points to always be inside a DUT analysis.
 	
-	def load_waveforms_data(self, where:str=None, variables:list=None):
+	def load_parsed_from_waveforms(self, where:str=None, variables:list=None):
 		DUT_analysis_dn = self.parent
 		
 		TB_batch_dn = DUT_analysis_dn.parent
@@ -63,7 +63,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 			save_histograms_here = task.path_to_directory_of_my_task/'histograms'
 			save_histograms_here.mkdir()
 			for var in histograms:
-				data = self.load_waveforms_data(variables=[var])
+				data = self.load_parsed_from_waveforms(variables=[var])
 				data = data.join(setup_config['DUT_name_rowcol'])
 				
 				logging.info(f'Plotting distribution of {var} in {self.pseudopath}...')
@@ -82,7 +82,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 			save_scatter_plots_here = task.path_to_directory_of_my_task/'scatter_plots'
 			save_scatter_plots_here.mkdir()
 			for xvar, yvar in scatter_plots:
-				data = self.load_waveforms_data(variables=[xvar,yvar])
+				data = self.load_parsed_from_waveforms(variables=[xvar,yvar])
 				data = data.join(setup_config['DUT_name_rowcol'])
 				
 				logging.info(f'Plotting {yvar} vs {xvar} scatter plot in {self.pseudopath}...')
@@ -165,7 +165,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 		with self.handle_task('plot_hits', 'voltage_point') as task:
 			setup_config = self.parent.parent.load_setup_configuration_info()
 			
-			DUT_above_threshold = self.load_waveforms_data(
+			DUT_above_threshold = self.load_parsed_from_waveforms(
 				where = f'`Amplitude (V)` < {-abs(amplitude_threshold)} AND `Time over 50% (s)`>1e-9',
 			)
 			
