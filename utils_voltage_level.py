@@ -12,15 +12,14 @@ import corry_stuff
 def load_waveforms_data(voltage_point_dn:DatanodeHandler, where:str=None, variables:list=None):
 	voltage_point_dn.check_datanode_class('voltage_point')
 	
-	DUT_analysis_dn = voltage_point_dn.parent
-	DUT_analysis_dn.check_datanode_class('DUT_analysis')
+	DUT_analysis_dn = voltage_point_dn.parent.as_type(DUT_analysis.DatanodeHandlerDUTAnalysis)
 	
 	TB_batch_dn = DUT_analysis_dn.parent
 	TB_batch_dn.check_datanode_class('TB_batch')
 	
 	setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
 	
-	DUT_analysis_configuration_metadata = DUT_analysis.load_DUT_configuration_metadata(DUT_analysis_dn)
+	DUT_analysis_configuration_metadata = DUT_analysis_dn.load_DUT_configuration_metadata()
 	this_DUT_chubut_channels = DUT_analysis_configuration_metadata['chubut_channels_numbers']
 	this_DUT_plane_number = DUT_analysis_configuration_metadata['plane_number']
 	
@@ -54,7 +53,7 @@ def load_waveforms_data(voltage_point_dn:DatanodeHandler, where:str=None, variab
 def plot_waveforms_distributions(voltage_point_dn:DatanodeHandler, max_points_to_plot=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
 	with voltage_point_dn.handle_task('plot_waveforms_distributions', check_datanode_class='voltage_point', check_required_tasks='EUDAQ_runs') as task:
 		setup_config = utils_batch_level.load_setup_configuration_info(voltage_point_dn.parent.parent)
-		DUT_config_metadata = DUT_analysis.load_DUT_configuration_metadata(voltage_point_dn.parent)
+		DUT_config_metadata = voltage_point_dn.parent.as_type(DUT_analysis.DatanodeHandlerDUTAnalysis).load_DUT_configuration_metadata()
 		setup_config = setup_config.query(f'plane_number=={DUT_config_metadata["plane_number"]} and chubut_channel in {sorted(DUT_config_metadata["chubut_channels_numbers"])}') # Keep only relevant part for this DUT.
 		setup_config.set_index(['n_CAEN','CAEN_n_channel'], inplace=True)
 		
@@ -130,13 +129,12 @@ def load_hits_on_DUT(voltage_point_dn:DatanodeHandler):
 	"""
 	voltage_point_dn.check_datanode_class('voltage_point')
 	
-	DUT_analysis_dn = voltage_point_dn.parent
-	DUT_analysis_dn.check_datanode_class('DUT_analysis')
+	DUT_analysis_dn = voltage_point_dn.parent.as_type(DUT_analysis.DatanodeHandlerDUTAnalysis)
 	
 	TB_batch_dn = DUT_analysis_dn.parent
 	TB_batch_dn.check_datanode_class('TB_batch')
 	
-	DUT_configuration_metadata = DUT_analysis.load_DUT_configuration_metadata(DUT_analysis_dn)
+	DUT_configuration_metadata = DUT_analysis_dn.load_DUT_configuration_metadata()
 	setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
 	
 	DUT_name_as_it_is_in_raw_files = set(setup_config.query(f'plane_number == {DUT_configuration_metadata["plane_number"]}')['DUT_name'])

@@ -7,7 +7,7 @@ import json
 import utils_voltage_level
 import dominate
 import dominate.tags as tags
-
+	
 def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:int, chubut_channel_numbers:set):
 	"""Creates a datanode to handle the analysis of one DUT.
 	
@@ -76,83 +76,86 @@ def create_voltage_point(DUT_analysis_dn:DatanodeHandler, voltage:int, EUDAQ_run
 				)
 	logging.info(f'Voltage point {repr(str(voltage_dn.pseudopath))} was created. ✅')
 
-def load_DUT_configuration_metadata(DUT_analysis_dn:DatanodeHandler):
-	DUT_analysis_dn.check_datanode_class('DUT_analysis')
-	with open(DUT_analysis_dn.path_to_directory_of_task('setup_config_metadata')/'metadata.json', 'r') as ifile:
-		loaded = json.load(ifile)
-		this_DUT_chubut_channels = loaded['chubut_channels_numbers']
-		this_DUT_plane_number = loaded['plane_number']
-	if len(this_DUT_chubut_channels) == 0:
-		raise RuntimeError(f'No `chubut channels` associated with DUT in {repr(str(DUT_analysis_dn.pseudopath))}. ')
-	if not isinstance(this_DUT_plane_number, int):
-		raise RuntimeError(f'Cannot determine plane number for DUT in {repr(str(DUT_analysis_dn.pseudopath))}. ')
+class DatanodeHandlerDUTAnalysis(DatanodeHandler):
+	def __init__(self, path_to_datanode:Path):
+		super().__init__(path_to_datanode=path_to_datanode, check_datanode_class='DUT_analysis')
 	
-	return loaded
-
-def plot_waveforms_distributions(DUT_analysis_dn:DatanodeHandler, max_points_to_plot_per_voltage=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
-	with DUT_analysis_dn.handle_task('plot_waveforms_distributions', 'DUT_analysis', 'voltages') as task:
-		for voltage_dn in DUT_analysis_dn.list_subdatanodes_of_task('voltages'):
-			utils_voltage_level.plot_waveforms_distributions(
-				voltage_point_dn = voltage_dn,
-				max_points_to_plot = max_points_to_plot_per_voltage,
-				histograms = histograms,
-				scatter_plots = scatter_plots,
-			)
+	def load_DUT_configuration_metadata(self):
+		self.check_datanode_class('DUT_analysis')
+		with open(self.path_to_directory_of_task('setup_config_metadata')/'metadata.json', 'r') as ifile:
+			loaded = json.load(ifile)
+			this_DUT_chubut_channels = loaded['chubut_channels_numbers']
+			this_DUT_plane_number = loaded['plane_number']
+		if len(this_DUT_chubut_channels) == 0:
+			raise RuntimeError(f'No `chubut channels` associated with DUT in {repr(str(self.pseudopath))}. ')
+		if not isinstance(this_DUT_plane_number, int):
+			raise RuntimeError(f'Cannot determine plane number for DUT in {repr(str(self.pseudopath))}. ')
 		
-		voltages = sorted(DUT_analysis_dn.list_subdatanodes_of_task('voltages'), key=DatanodeHandler.datanode_name.__get__)
-		
-		for kind_of_plot in {'histograms','scatter_plots'}:
-			save_plots_here = task.path_to_directory_of_my_task/kind_of_plot
-			save_plots_here.mkdir()
-			
-			for plot_file_name in [_.name for _ in (DUT_analysis_dn.list_subdatanodes_of_task('voltages')[0].path_to_directory_of_task('plot_waveforms_distributions')/kind_of_plot).iterdir()]:
-				doc = dominate.document(title=plot_file_name.split('.')[0])
-				with doc:
-					tags.h1(plot_file_name.split('.')[0] + ' distributions')
-					tags.h3(str(DUT_analysis_dn.pseudopath))
-					for voltage_dn in voltages:
-						tags.iframe(
-							src = Path('../..')/((voltage_dn.path_to_directory_of_task('plot_waveforms_distributions')/kind_of_plot/plot_file_name).relative_to(DUT_analysis_dn.path_to_datanode_directory)),
-							style = 'height: 90vh; width: 100%; min-height: 666px; min-width: 666px; border: 0;',
-						)
-				with open(save_plots_here/plot_file_name, 'w') as ofile:
-					print(doc, file=ofile)
-	logging.info(f'Finished plotting waveforms distributions in {DUT_analysis_dn.pseudopath} ✅')
-
-def plot_hits(DUT_analysis_dn:DatanodeHandler, amplitude_threshold:float):
-	"""Plot hits projected onto the DUT.
+		return loaded
 	
-	Arguments
-	---------
-	DUT_analysis_dn: DatanodeHandler
-		A `DatanodeHandler` pointing to the DUT analysis datanode.
-	amplitude_threshold: float
-		Threshold in the amplitude to consider the activation of the pixels
-		in the DUT. For more details see the definition of the function
-		in `utils_voltage_level.py`.
-	"""
-	with DUT_analysis_dn.handle_task('plot_hits', 'DUT_analysis', 'voltages') as task:
-		for voltage_dn in DUT_analysis_dn.list_subdatanodes_of_task('voltages'):
-			utils_voltage_level.plot_hits(
-				voltage_point_dn = voltage_dn,
-				amplitude_threshold = amplitude_threshold,
-			)
-		
-		voltages = sorted(DUT_analysis_dn.list_subdatanodes_of_task('voltages'), key=DatanodeHandler.datanode_name.__get__)
-		
-		doc = dominate.document(title=f'Hits on {DUT_analysis_dn.pseudopath}')
-		with doc:
-			tags.h1('Hits on DUT')
-			tags.h3(str(DUT_analysis_dn.pseudopath))
-			for voltage_dn in voltages:
-				tags.iframe(
-					src = Path('..')/((voltage_dn.path_to_directory_of_task('plot_hits')/'hits.html').relative_to(DUT_analysis_dn.path_to_datanode_directory)),
-					style = 'height: 90vh; width: 100%; min-height: 666px; min-width: 666px; border: 0;',
+	def plot_waveforms_distributions(self, max_points_to_plot_per_voltage=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
+		with self.handle_task('plot_waveforms_distributions', 'DUT_analysis', 'voltages') as task:
+			for voltage_dn in self.list_subdatanodes_of_task('voltages'):
+				utils_voltage_level.plot_waveforms_distributions(
+					voltage_point_dn = voltage_dn,
+					max_points_to_plot = max_points_to_plot_per_voltage,
+					histograms = histograms,
+					scatter_plots = scatter_plots,
 				)
-		with open(task.path_to_directory_of_my_task/'hits.html', 'w') as ofile:
-			print(doc, file=ofile)
+			
+			voltages = sorted(self.list_subdatanodes_of_task('voltages'), key=DatanodeHandler.datanode_name.__get__)
+			
+			for kind_of_plot in {'histograms','scatter_plots'}:
+				save_plots_here = task.path_to_directory_of_my_task/kind_of_plot
+				save_plots_here.mkdir()
+				
+				for plot_file_name in [_.name for _ in (self.list_subdatanodes_of_task('voltages')[0].path_to_directory_of_task('plot_waveforms_distributions')/kind_of_plot).iterdir()]:
+					doc = dominate.document(title=plot_file_name.split('.')[0])
+					with doc:
+						tags.h1(plot_file_name.split('.')[0] + ' distributions')
+						tags.h3(str(self.pseudopath))
+						for voltage_dn in voltages:
+							tags.iframe(
+								src = Path('../..')/((voltage_dn.path_to_directory_of_task('plot_waveforms_distributions')/kind_of_plot/plot_file_name).relative_to(self.path_to_datanode_directory)),
+								style = 'height: 90vh; width: 100%; min-height: 666px; min-width: 666px; border: 0;',
+							)
+					with open(save_plots_here/plot_file_name, 'w') as ofile:
+						print(doc, file=ofile)
+		logging.info(f'Finished plotting waveforms distributions in {self.pseudopath} ✅')
+	
+	def plot_hits(self, amplitude_threshold:float):
+		"""Plot hits projected onto the DUT.
 		
-		logging.info(f'Finished plotting hits in {DUT_analysis_dn.pseudopath} ✅')
+		Arguments
+		---------
+		amplitude_threshold: float
+			Threshold in the amplitude to consider the activation of the pixels
+			in the DUT. For more details see the definition of the function
+			in `utils_voltage_level.py`.
+		"""
+		with self.handle_task('plot_hits', 'DUT_analysis', 'voltages') as task:
+			for voltage_dn in self.list_subdatanodes_of_task('voltages'):
+				print('HI!!!!')
+				utils_voltage_level.plot_hits(
+					voltage_point_dn = voltage_dn,
+					amplitude_threshold = amplitude_threshold,
+				)
+			
+			voltages = sorted(self.list_subdatanodes_of_task('voltages'), key=DatanodeHandler.datanode_name.__get__)
+			
+			doc = dominate.document(title=f'Hits on {self.pseudopath}')
+			with doc:
+				tags.h1('Hits on DUT')
+				tags.h3(str(self.pseudopath))
+				for voltage_dn in voltages:
+					tags.iframe(
+						src = Path('..')/((voltage_dn.path_to_directory_of_task('plot_hits')/'hits.html').relative_to(self.path_to_datanode_directory)),
+						style = 'height: 90vh; width: 100%; min-height: 666px; min-width: 666px; border: 0;',
+					)
+			with open(task.path_to_directory_of_my_task/'hits.html', 'w') as ofile:
+				print(doc, file=ofile)
+			
+			logging.info(f'Finished plotting hits in {self.pseudopath} ✅')
 
 if __name__ == '__main__':
 	import sys
@@ -187,10 +190,8 @@ if __name__ == '__main__':
 	)
 	args = parser.parse_args()
 	
+	DUT_analysis_dn = DatanodeHandlerDUTAnalysis(args.datanode)
 	if args.plot_waveforms_distributions:
-		plot_waveforms_distributions(DatanodeHandler(args.datanode))
+		DUT_analysis_dn.plot_waveforms_distributions()
 	if args.plot_hits:
-		plot_hits(
-			DUT_analysis_dn = DatanodeHandler(args.datanode),
-			amplitude_threshold = .01
-		)
+		DUT_analysis_dn.plot_hits(amplitude_threshold = .01)
