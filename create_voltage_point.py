@@ -1,7 +1,7 @@
 from pathlib import Path
 from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import logging
-from DUT_analysis import create_voltage_point
+from VoltagePoint import create_voltage_point
 
 if __name__ == '__main__':
 	import sys

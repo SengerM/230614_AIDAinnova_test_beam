@@ -27,7 +27,7 @@ def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:
 		separate them.
 	"""
 	with TB_batch_dn.handle_task('DUTs_analyses', check_datanode_class='TB_batch', check_required_tasks='batch_info', keep_old_data=True) as task_handler:
-		setup_config = TBBatch.load_setup_configuration_info(TB_batch_dn)
+		setup_config = TBBatch.DatanodeHandlerTBBatch.load_setup_configuration_info(TB_batch_dn)
 		if plane_number not in setup_config['plane_number']:
 			raise RuntimeError(f'`plane_number` {plane_number} not found in the setup_config from batch {repr(str(TB_batch_dn.pseudopath))}. ')
 		if any([ch not in setup_config.query(f'plane_number=={plane_number}')['chubut_channel'].values for ch in chubut_channel_numbers]):
@@ -44,37 +44,6 @@ def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:
 					indent = '\t',
 				)
 		logging.info(f'DUT analysis {repr(str(DUT_analysis_dn.pseudopath))} was created. ✅')
-
-def create_voltage_point(DUT_analysis_dn:DatanodeHandler, voltage:int, EUDAQ_runs:set):
-	"""Create a new voltage point within a DUT analysis.
-	
-	Arguments
-	---------
-	DUT_analysis_dn: DatanodeHandler
-		A `DatanodeHandler` pointing to a DUT analysis in which to create
-		the new voltage	point.
-	voltage: int
-		The voltage value, e.g. `150`.
-	EUDAQ_runs: set of int
-		A set of int with the EUDAQ run numbers to be linked to this voltage.
-	"""
-	with DUT_analysis_dn.handle_task('voltages', check_datanode_class='DUT_analysis', keep_old_data=True) as task:
-		TB_batch_dn = DUT_analysis_dn.parent
-		EUDAQ_runs_within_this_batch = {int(r.datanode_name.split('_')[0].replace('run','')):r.datanode_name for r in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs')}
-		
-		if any([_ not in EUDAQ_runs_within_this_batch for _ in EUDAQ_runs]):
-			raise RuntimeError(f'At least one of the runs {EUDAQ_runs} is not available in batch {repr(str(TB_batch_dn.pseudopath))}. Available runs found are: {sorted(EUDAQ_runs_within_this_batch)}. ')
-		
-		voltage_dn = task.create_subdatanode(f'{voltage}V', subdatanode_class='voltage_point')
-		
-		with voltage_dn.handle_task('EUDAQ_runs') as EUDAQ_runs_task:
-			with open(EUDAQ_runs_task.path_to_directory_of_my_task/'runs.json', 'w') as ofile:
-				json.dump(
-					[EUDAQ_runs_within_this_batch[_] for _ in EUDAQ_runs],
-					ofile,
-					indent = '\t',
-				)
-	logging.info(f'Voltage point {repr(str(voltage_dn.pseudopath))} was created. ✅')
 
 class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 	def __init__(self, path_to_datanode:Path):

@@ -7,6 +7,37 @@ import TBBatch
 import DUT_analysis
 import plotly.express as px
 
+def create_voltage_point(DUT_analysis_dn:DatanodeHandler, voltage:int, EUDAQ_runs:set):
+	"""Create a new voltage point within a DUT analysis.
+	
+	Arguments
+	---------
+	DUT_analysis_dn: DatanodeHandler
+		A `DatanodeHandler` pointing to a DUT analysis in which to create
+		the new voltage	point.
+	voltage: int
+		The voltage value, e.g. `150`.
+	EUDAQ_runs: set of int
+		A set of int with the EUDAQ run numbers to be linked to this voltage.
+	"""
+	with DUT_analysis_dn.handle_task('voltages', check_datanode_class='DUT_analysis', keep_old_data=True) as task:
+		TB_batch_dn = DUT_analysis_dn.parent
+		EUDAQ_runs_within_this_batch = {int(r.datanode_name.split('_')[0].replace('run','')):r.datanode_name for r in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs')}
+		
+		if any([_ not in EUDAQ_runs_within_this_batch for _ in EUDAQ_runs]):
+			raise RuntimeError(f'At least one of the runs {EUDAQ_runs} is not available in batch {repr(str(TB_batch_dn.pseudopath))}. Available runs found are: {sorted(EUDAQ_runs_within_this_batch)}. ')
+		
+		voltage_dn = task.create_subdatanode(f'{voltage}V', subdatanode_class='voltage_point')
+		
+		with voltage_dn.handle_task('EUDAQ_runs') as EUDAQ_runs_task:
+			with open(EUDAQ_runs_task.path_to_directory_of_my_task/'runs.json', 'w') as ofile:
+				json.dump(
+					[EUDAQ_runs_within_this_batch[_] for _ in EUDAQ_runs],
+					ofile,
+					indent = '\t',
+				)
+	logging.info(f'Voltage point {repr(str(voltage_dn.pseudopath))} was created. ✅')
+
 class DatanodeHandlerVoltagePoint(DatanodeHandler):
 	def __init__(self, path_to_datanode:Path):
 		super().__init__(path_to_datanode=path_to_datanode, check_datanode_class='voltage_point')
