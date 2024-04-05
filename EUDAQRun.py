@@ -189,3 +189,37 @@ class DatanodeHandlerEUDAQRun(DatanodeHandler):
 		data = data.loc[tracks_multiplicity[tracks_multiplicity==1].index] # Drop track multiplicity > 1
 		
 		return data
+
+if __name__ == '__main__':
+	import sys
+	import argparse
+	from plotly_utils import set_my_template_as_default
+	
+	logging.basicConfig(
+		stream = sys.stderr, 
+		level = logging.INFO,
+		format = '%(asctime)s|%(levelname)s|%(message)s',
+		datefmt = '%H:%M:%S',
+	)
+	
+	set_my_template_as_default()
+	
+	parser = argparse.ArgumentParser()
+	parser.add_argument('--datanode',
+		help = 'Path to an EUDAQ run datanode.',
+		dest = 'datanode',
+		type = Path,
+	)
+	parser.add_argument(
+		'--find_EUDAQ_offset',
+		help = 'Executes the task to find the EUDAQ offset and deal with the bug.',
+		required = False,
+		dest = 'find_EUDAQ_offset',
+		action = 'store_true'
+	)
+	args = parser.parse_args()
+	
+	dn = DatanodeHandlerEUDAQRun(args.datanode)
+	if args.find_EUDAQ_offset:
+		dn.find_EUDAQ_offset()
+
