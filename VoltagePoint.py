@@ -131,8 +131,15 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 					include_plotlyjs = 'cdn',
 				)
 
-	def load_hits_on_DUT(self):
+	def load_hits_on_DUT(self, use_centering_transformation:bool=False):
 		"""Load all the hits on the DUT for this voltage point.
+		
+		Arguments
+		---------
+		use_centering_transformation:
+			If `True`, it will be attempted to read the transformation
+			parameters from the parent DUT of the voltage point and
+			apply it to the tracks before returning them.
 		
 		Returns
 		-------
@@ -180,6 +187,15 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 			_ = pandas.concat({int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run','')): _}, names=['EUDAQ_run'])
 			hits.append(_)
 		hits = pandas.concat(hits)
+		
+		if use_centering_transformation:
+			with open(DUT_analysis_dn.path_to_directory_of_task('centering_transformation')/'transformation_parameters.json', 'r') as ifile:
+				transformation_parameters = json.load(ifile)
+			for xy in ['x', 'y']:
+				hits[f'{xy} (m)'] -= transformation_parameters[f'{xy}_center']
+			r = (hits['x (m)']**2 + hits['y (m)']**2)**.5
+			phi = numpy.arctan2(hits['y (m)'], hits['x (m)'])
+			hits['x (m)'], hits['y (m)'] = r*numpy.cos(phi+transformation_parameters['rotation_angle']*numpy.pi/180), r*numpy.sin(phi+transformation_parameters['rotation_angle']*numpy.pi/180)
 		
 		return hits
 
