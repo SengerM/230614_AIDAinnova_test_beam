@@ -1,13 +1,11 @@
 from pathlib import Path
 from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import logging
-from parse_waveforms import load_parsed_from_waveforms_from_EUDAQ_run
 import json
 import pandas
 import TBBatch
 import DUT_analysis
 import plotly.express as px
-import corry_stuff
 
 class DatanodeHandlerVoltagePoint(DatanodeHandler):
 	def __init__(self, path_to_datanode:Path):
@@ -46,7 +44,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 		for EUDAQ_run_dn in TB_batch_dn.list_subdatanodes_of_task('EUDAQ_runs'):
 			if EUDAQ_run_dn.datanode_name not in EUDAQ_runs_from_this_voltage:
 				continue
-			data = load_parsed_from_waveforms_from_EUDAQ_run(EUDAQ_run_dn, where=where, variables=variables)
+			data = EUDAQ_run_dn.load_parsed_from_waveforms(where=where, variables=variables)
 			data['EUDAQ_run'] = int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run',''))
 			data.set_index('EUDAQ_run', append=True, inplace=True)
 			loaded_data.append(data)
@@ -146,7 +144,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 		
 		hits = []
 		for EUDAQ_run_dn in EUDAQ_runs:
-			_ = corry_stuff.load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn, DUT_name = DUT_name_as_it_is_in_raw_files)
+			_ = EUDAQ_run_dn.load_hits_on_DUT(DUT_name = DUT_name_as_it_is_in_raw_files)
 			_ = pandas.concat({int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run','')): _}, names=['EUDAQ_run'])
 			hits.append(_)
 		hits = pandas.concat(hits)

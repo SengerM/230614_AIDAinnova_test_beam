@@ -1,7 +1,7 @@
 from pathlib import Path
 from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import logging
-import utils_run_level
+import EUDAQRun
 
 if __name__ == '__main__':
 	import sys
@@ -25,6 +25,6 @@ if __name__ == '__main__':
 	)
 	args = parser.parse_args()
 	
-	utils_run_level.find_EUDAQ_offset(
+	EUDAQRun.find_EUDAQ_offset(
 		EUDAQ_run_dn = DatanodeHandler(args.datanode), 
 	)

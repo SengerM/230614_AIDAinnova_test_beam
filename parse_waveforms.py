@@ -188,37 +188,6 @@ def parse_waveforms(EUDAQ_run_dn:DatanodeHandler, force:bool=False):
 		)
 		logging.info(f'Successfully parsed waveforms in {EUDAQ_run_dn.pseudopath} ✅')
 
-def load_parsed_from_waveforms_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, where:str, variables:list=None):
-	"""Load data parsed from waveforms from an EUDAQ run.
-	
-	Arguments
-	---------
-	EUDAQ_run_dn: DatanodeHandler
-		A `DatanodeHandler` pointing to an EUDAQ run.
-	where: str
-		The statement that will be placed in the SQL query.
-	variables: list of str
-		A list with the variables to be loaded, e.g. `['Amplitude (V)','t_50 (s)']`.
-	"""
-	EUDAQ_run_dn.check_datanode_class('EUDAQ_run')
-	
-	logging.info(f'Reading {variables} from {EUDAQ_run_dn.pseudopath}...')
-	
-	if isinstance(variables, str):
-		variables = [variables]
-	if variables is not None:
-		if len(variables) == 0:
-			variables = None
-		variables = ',' + ','.join([f'`{_}`' for _ in variables])
-	else:
-		variables = ''
-	data = pandas.read_sql(
-		f'SELECT n_event,n_CAEN,CAEN_n_channel{variables} FROM dataframe_table WHERE {where}',
-		con = sqlite3.connect(EUDAQ_run_dn.path_to_directory_of_task('parse_waveforms')/f'parsed_from_waveforms.sqlite'),
-	)
-	data.set_index(['n_event','n_CAEN','CAEN_n_channel'], inplace=True)
-	return data
-
 if __name__=='__main__':
 	import argparse
 	import sys
