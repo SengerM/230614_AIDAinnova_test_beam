@@ -4,7 +4,7 @@ import pandas
 import logging
 import utils_batch_level
 import json
-import utils_voltage_level
+import VoltagePoint
 import dominate
 import dominate.tags as tags
 	
@@ -83,7 +83,7 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 	def list_subdatanodes_of_task(self, task_name:str):
 		subdatanodes = super().list_subdatanodes_of_task(task_name)
 		if task_name == 'voltages':
-			subdatanodes = [_.as_type(utils_voltage_level.DatanodeHandlerVoltagePoint) for _ in subdatanodes]
+			subdatanodes = [_.as_type(VoltagePoint.DatanodeHandlerVoltagePoint) for _ in subdatanodes]
 		return subdatanodes
 	
 	def load_DUT_configuration_metadata(self):
@@ -136,7 +136,7 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 		amplitude_threshold: float
 			Threshold in the amplitude to consider the activation of the pixels
 			in the DUT. For more details see the definition of the function
-			in `utils_voltage_level.py`.
+			in `VoltagePoint.py`.
 		"""
 		with self.handle_task('plot_hits', 'DUT_analysis', 'voltages') as task:
 			for voltage_dn in self.list_subdatanodes_of_task('voltages'):
