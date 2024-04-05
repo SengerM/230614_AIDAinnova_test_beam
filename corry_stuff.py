@@ -13,7 +13,7 @@ import sqlite3
 import json
 import uproot
 import numpy
-import utils_batch_level
+import TBBatch
 import json
 
 def replace_arguments_in_file_template(file_template:Path, output_file:Path, arguments:dict):
@@ -426,7 +426,7 @@ def load_hits_on_DUT_from_EUDAQ_run(EUDAQ_run_dn:DatanodeHandler, DUT_name:str, 
 	TB_batch_dn = EUDAQ_run_dn.parent
 	TB_batch_dn.check_datanode_class('TB_batch')
 	
-	setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
+	setup_config = TBBatch.DatanodeHandlerTBBatch.load_setup_configuration_info(TB_batch_dn)
 	if DUT_name not in set(setup_config['DUT_name']):
 		raise ValueError(f'DUT_name {repr(DUT_name)} not found among the DUT names available in batch {repr(str(TB_batch_dn.pseudopath))}. DUT names available are {set(setup_config["DUT_name"])}. ')
 	

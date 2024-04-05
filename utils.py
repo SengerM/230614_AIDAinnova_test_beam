@@ -115,3 +115,21 @@ def run_commands_in_docker_container(command, container_id:str, stdout=None, std
 	finally:
 		temp_file.unlink()
 	return result
+
+# ~ class DatanodeHandlerSubclassMe(DatanodeHandler):
+	# ~ my_class = 'write here the class of your datanodes'
+	# ~ parent_class = 'class of the parent'
+	# ~ subdatanode_classes = {'task_1': 'class of subdatanodes of task 1', 'task_2': 'class of subdatanodes of task 2'}
+	
+	# ~ def __init__(self, path_to_datanode:Path):
+		# ~ super().__init__(path_to_datanode, check_datanode_class=self.my_class)
+	
+	# ~ @property
+	# ~ def parent(self):
+		# ~ return super().parent.as_type(self.parent_class)
+	
+	# ~ def list_subdatanodes_of_task(self, task_name:str):
+		# ~ subdatanodes = super().list_subdatanodes_of_task(task_name)
+		# ~ if task_name in self.subdatanode_classes:
+			# ~ subdatanodes = [_.as_type(self.subdatanode_classes[task_name]) for _ in subdatanodes]
+		# ~ return subdatanodes

@@ -8,7 +8,7 @@ from progressreporting.TelegramProgressReporter import SafeTelegramReporter4Loop
 from contextlib import nullcontext
 import parse_waveforms
 import corry_stuff
-import utils_batch_level
+import TBBatch
 import plotly.express as px
 import json
 
@@ -27,13 +27,21 @@ def execute_EUDAQ_run_task_on_all_runs_within_batch(TB_batch_dn:DatanodeHandler,
 			reporter.update(1) if telegram_bot_reporter is not None else None
 	logging.info(f'Finished running `{func.__name__}` on all EUDAQ_runs within TB_batch `{TB_batch_dn.pseudopath}` ✅')
 
+class DatanodeHandlerEUDAQRun(DatanodeHandler):
+	def __init__(self, path_to_datanode:Path):
+		super().__init__(path_to_datanode=path_to_datanode, check_datanode_class='EUDAQ_run')
+	
+	@property
+	def parent(self):
+		return super().parent.as_type(TBBatch.DatanodeHandlerTBBatch) # Forcing EUDAQ runs to always be inside a TB batch.
+	
 def find_EUDAQ_offset(EUDAQ_run_dn:DatanodeHandler):
 	with EUDAQ_run_dn.handle_task(
 		'find_EUDAQ_offset', 
 		check_datanode_class = 'EUDAQ_run', 
 		check_required_tasks = ['parse_waveforms','convert_tracks_root_file_to_easy_SQLite'],
 	) as task:
-		setup_config = utils_batch_level.load_setup_configuration_info(EUDAQ_run_dn.parent)
+		setup_config = TBBatch.DatanodeHandlerTBBatch.load_setup_configuration_info(EUDAQ_run_dn.parent)
 		CAENs_detected_a_hit = parse_waveforms.load_parsed_from_waveforms_from_EUDAQ_run(
 			EUDAQ_run_dn = EUDAQ_run_dn, 
 			where = '`Amplitude (V)` < -.01 AND `Time over 50% (s)` > 1e-9', # This is what we consider an active pixel.

@@ -2,7 +2,7 @@ from pathlib import Path
 from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import pandas
 import logging
-import utils_batch_level
+import TBBatch
 import json
 import VoltagePoint
 import dominate
@@ -27,7 +27,7 @@ def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:
 		separate them.
 	"""
 	with TB_batch_dn.handle_task('DUTs_analyses', check_datanode_class='TB_batch', check_required_tasks='batch_info', keep_old_data=True) as task_handler:
-		setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
+		setup_config = TBBatch.load_setup_configuration_info(TB_batch_dn)
 		if plane_number not in setup_config['plane_number']:
 			raise RuntimeError(f'`plane_number` {plane_number} not found in the setup_config from batch {repr(str(TB_batch_dn.pseudopath))}. ')
 		if any([ch not in setup_config.query(f'plane_number=={plane_number}')['chubut_channel'].values for ch in chubut_channel_numbers]):
@@ -85,6 +85,10 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 		if task_name == 'voltages':
 			subdatanodes = [_.as_type(VoltagePoint.DatanodeHandlerVoltagePoint) for _ in subdatanodes]
 		return subdatanodes
+	
+	@property
+	def parent(self):
+		return super().parent.as_type(TBBatch.DatanodeHandlerTBBatch)
 	
 	def load_DUT_configuration_metadata(self):
 		self.check_datanode_class('DUT_analysis')

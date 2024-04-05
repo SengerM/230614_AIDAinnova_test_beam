@@ -4,7 +4,7 @@ import logging
 from parse_waveforms import load_parsed_from_waveforms_from_EUDAQ_run
 import json
 import pandas
-import utils_batch_level
+import TBBatch
 import DUT_analysis
 import plotly.express as px
 import corry_stuff
@@ -21,9 +21,8 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 		DUT_analysis_dn = self.parent
 		
 		TB_batch_dn = DUT_analysis_dn.parent
-		TB_batch_dn.check_datanode_class('TB_batch')
 		
-		setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
+		setup_config = TB_batch_dn.load_setup_configuration_info()
 		
 		DUT_analysis_configuration_metadata = DUT_analysis_dn.load_DUT_configuration_metadata()
 		this_DUT_chubut_channels = DUT_analysis_configuration_metadata['chubut_channels_numbers']
@@ -58,7 +57,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 
 	def plot_waveforms_distributions(self, max_points_to_plot=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
 		with self.handle_task('plot_waveforms_distributions', check_datanode_class='voltage_point', check_required_tasks='EUDAQ_runs') as task:
-			setup_config = utils_batch_level.load_setup_configuration_info(self.parent.parent)
+			setup_config = self.parent.parent.load_setup_configuration_info()
 			DUT_config_metadata = self.parent.as_type(DUT_analysis.DatanodeHandlerDUTAnalysis).load_DUT_configuration_metadata()
 			setup_config = setup_config.query(f'plane_number=={DUT_config_metadata["plane_number"]} and chubut_channel in {sorted(DUT_config_metadata["chubut_channels_numbers"])}') # Keep only relevant part for this DUT.
 			setup_config.set_index(['n_CAEN','CAEN_n_channel'], inplace=True)
@@ -130,10 +129,9 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 		DUT_analysis_dn = self.parent
 		
 		TB_batch_dn = DUT_analysis_dn.parent
-		TB_batch_dn.check_datanode_class('TB_batch')
 		
 		DUT_configuration_metadata = DUT_analysis_dn.load_DUT_configuration_metadata()
-		setup_config = utils_batch_level.load_setup_configuration_info(TB_batch_dn)
+		setup_config = TB_batch_dn.load_setup_configuration_info()
 		
 		DUT_name_as_it_is_in_raw_files = set(setup_config.query(f'plane_number == {DUT_configuration_metadata["plane_number"]}')['DUT_name'])
 		if len(DUT_name_as_it_is_in_raw_files) != 1:
@@ -167,7 +165,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 			`'Amplitude (V)' < {-abs(amplitude_threshold)}`.
 		"""
 		with self.handle_task('plot_hits', 'voltage_point') as task:
-			setup_config = utils_batch_level.load_setup_configuration_info(self.parent.parent)
+			setup_config = self.parent.parent.load_setup_configuration_info()
 			
 			DUT_above_threshold = self.load_waveforms_data(
 				where = f'`Amplitude (V)` < {-abs(amplitude_threshold)} AND `Time over 50% (s)`>1e-9',
