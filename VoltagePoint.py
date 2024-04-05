@@ -6,6 +6,7 @@ import pandas
 import TBBatch
 import DUT_analysis
 import plotly.express as px
+import numpy
 
 def create_voltage_point(DUT_analysis_dn:DatanodeHandler, voltage:int, EUDAQ_runs:set):
 	"""Create a new voltage point within a DUT analysis.
@@ -182,7 +183,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 		
 		return hits
 
-	def plot_hits(self, amplitude_threshold:float):
+	def plot_hits(self, amplitude_threshold:float, transformation_parameters:dict=None):
 		"""Plot hits projected onto the DUT.
 		
 		Arguments
@@ -193,7 +194,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 			sign of `amplitude_threshold` is ignored, i.e. this works in this way:
 			`'Amplitude (V)' < {-abs(amplitude_threshold)}`.
 		"""
-		with self.handle_task('plot_hits', 'voltage_point') as task:
+		with self.handle_task('plot_hits' if transformation_parameters is None else 'plot_hits_transformed', 'voltage_point') as task:
 			setup_config = self.parent.parent.load_setup_configuration_info()
 			
 			DUT_above_threshold = self.load_parsed_from_waveforms(
@@ -201,6 +202,15 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 			)
 			
 			tracks_on_DUT = self.load_hits_on_DUT()
+			
+			if transformation_parameters is not None:
+				for xy in ['x', 'y']:
+					tracks_on_DUT[f'{xy} (m)'] -= transformation_parameters[f'{xy}_center']
+				r = (tracks_on_DUT['x (m)']**2 + tracks_on_DUT['y (m)']**2)**.5
+				phi = numpy.arctan2(tracks_on_DUT['y (m)'], tracks_on_DUT['x (m)'])
+				tracks_on_DUT['x (m)'], tracks_on_DUT['y (m)'] = r*numpy.cos(phi+transformation_parameters['rotation_angle']*numpy.pi/180), r*numpy.sin(phi+transformation_parameters['rotation_angle']*numpy.pi/180)
+				with open(task.path_to_directory_of_my_task/'transformation_parameters.json', 'w') as ofile:
+					json.dump(transformation_parameters, ofile)
 			
 			for df in [DUT_above_threshold, tracks_on_DUT]:
 				df.reset_index(inplace=True)
@@ -211,7 +221,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 			hits = hits.reset_index(drop=False).set_index(['n_CAEN','CAEN_n_channel']).join(setup_config.set_index(['n_CAEN','CAEN_n_channel'])['DUT_name_rowcol'])
 			
 			fig = px.scatter(
-				title = f'Hits on DUT<br><sup>{self.pseudopath}, amplitude<{-amplitude_threshold*1e3:.0f} mV</sup>',
+				title = f'Hits on DUT' + (' transformed' if transformation_parameters is not None else '') + f'<br><sup>{self.pseudopath}, amplitude<{-amplitude_threshold*1e3:.0f} mV</sup>',
 				data_frame = hits.reset_index().sort_values('DUT_name_rowcol'),
 				x = 'x (m)',
 				y = 'y (m)',

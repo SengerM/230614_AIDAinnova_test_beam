@@ -130,7 +130,49 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 				print(doc, file=ofile)
 			
 			logging.info(f'Finished plotting hits in {self.pseudopath} ✅')
-
+	
+	def centering_transformation(self):
+		"""Prompts for the transformation parameters to be used later on.
+		Since this is not easy to automatize, it relies on a human to get
+		the transformation parameters."""
+		with self.handle_task('centering_transformation', check_required_tasks='plot_hits') as task:
+			input(f'Open the plot with the hits in {self.pseudopath} and press enter. ')
+			while True:
+				x_center = float(input('What is the x center of the DUT? '))
+				y_center = float(input('What is the y center of the DUT? '))
+				rotation_angle = float(input('What is the rotation angle of the DUT? (in deg) '))
+				transformation_parameters = dict(
+					x_center = x_center,
+					y_center = y_center,
+					rotation_angle = rotation_angle,
+				)
+				
+				# Now let's plot things using these transformation parameters and ask the user if he is happy with that:
+				for voltage_dn in self.list_subdatanodes_of_task('voltages'):
+					voltage_dn.plot_hits(amplitude_threshold = .01, transformation_parameters=transformation_parameters)
+				
+				voltages = sorted(self.list_subdatanodes_of_task('voltages'), key=DatanodeHandler.datanode_name.__get__)
+				
+				doc = dominate.document(title=f'Transformed hits on {self.pseudopath}')
+				with doc:
+					tags.h1('Hits on DUT with transformation applied')
+					tags.h3(str(self.pseudopath))
+					tags.p('Transformation parameters:\n' + json.dumps(transformation_parameters, indent=4))
+					for voltage_dn in voltages:
+						tags.iframe(
+							src = Path('..')/((voltage_dn.path_to_directory_of_task('plot_hits_transformed')/'hits.html').relative_to(self.path_to_datanode_directory)),
+							style = 'height: 90vh; width: 100%; min-height: 666px; min-width: 666px; border: 0;',
+						)
+				with open(task.path_to_directory_of_my_task/'hits_transformed.html', 'w') as ofile:
+					print(doc, file=ofile)
+				
+				if 'yes' == input(f'Look at the plot in {self.pseudopath} inside {repr(str(task.task_name))	}. Are you happy with the results? (yes/no) '):
+					with open(task.path_to_directory_of_my_task/'transformation_parameters.json', 'w') as ofile:
+						json.dump(transformation_parameters, ofile)
+					break
+				print(f"Let's start over...")
+		logging.info(f'Transformation parameters configured for {self.pseudopath} ✅')
+	
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -162,6 +204,11 @@ if __name__ == '__main__':
 		dest = 'plot_hits',
 		action = 'store_true',
 	)
+	parser.add_argument(
+		'--centering_transformation',
+		dest = 'centering_transformation',
+		action = 'store_true',
+	)
 	args = parser.parse_args()
 	
 	DUT_analysis_dn = DatanodeHandlerDUTAnalysis(args.datanode)
@@ -169,3 +216,5 @@ if __name__ == '__main__':
 		DUT_analysis_dn.plot_waveforms_distributions()
 	if args.plot_hits:
 		DUT_analysis_dn.plot_hits(amplitude_threshold = .01)
+	if args.centering_transformation:
+		DUT_analysis_dn.centering_transformation()
