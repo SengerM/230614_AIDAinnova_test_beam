@@ -80,6 +80,12 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 	def __init__(self, path_to_datanode:Path):
 		super().__init__(path_to_datanode=path_to_datanode, check_datanode_class='DUT_analysis')
 	
+	def list_subdatanodes_of_task(self, task_name:str):
+		subdatanodes = super().list_subdatanodes_of_task(task_name)
+		if task_name == 'voltages':
+			subdatanodes = [_.as_type(utils_voltage_level.DatanodeHandlerVoltagePoint) for _ in subdatanodes]
+		return subdatanodes
+	
 	def load_DUT_configuration_metadata(self):
 		self.check_datanode_class('DUT_analysis')
 		with open(self.path_to_directory_of_task('setup_config_metadata')/'metadata.json', 'r') as ifile:
@@ -96,8 +102,7 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 	def plot_waveforms_distributions(self, max_points_to_plot_per_voltage=9999, histograms=['Amplitude (V)','Collected charge (V s)','t_50 (s)','Rise time (s)','SNR','Time over 50% (s)'], scatter_plots=[('t_50 (s)','Amplitude (V)'),('Time over 50% (s)','Amplitude (V)')]):
 		with self.handle_task('plot_waveforms_distributions', 'DUT_analysis', 'voltages') as task:
 			for voltage_dn in self.list_subdatanodes_of_task('voltages'):
-				utils_voltage_level.plot_waveforms_distributions(
-					voltage_point_dn = voltage_dn,
+				voltage_dn.plot_waveforms_distributions(
 					max_points_to_plot = max_points_to_plot_per_voltage,
 					histograms = histograms,
 					scatter_plots = scatter_plots,
@@ -135,11 +140,7 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 		"""
 		with self.handle_task('plot_hits', 'DUT_analysis', 'voltages') as task:
 			for voltage_dn in self.list_subdatanodes_of_task('voltages'):
-				print('HI!!!!')
-				utils_voltage_level.plot_hits(
-					voltage_point_dn = voltage_dn,
-					amplitude_threshold = amplitude_threshold,
-				)
+				voltage_dn.plot_hits(amplitude_threshold = amplitude_threshold)
 			
 			voltages = sorted(self.list_subdatanodes_of_task('voltages'), key=DatanodeHandler.datanode_name.__get__)
 			
