@@ -8,6 +8,8 @@ import VoltagePoint
 import dominate
 import dominate.tags as tags
 import EfficiencyAnalysis
+import plotly.express as px
+from utils import save_dataframe
 	
 def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:int, chubut_channel_numbers:set):
 	"""Creates a datanode to handle the analysis of one DUT.
@@ -195,13 +197,49 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 	def run_two_pixels_efficiency_analyses(self, hit_amplitude_threshold:float, bin_size_meters:float):
 		"""Run all the analyses that are defined in the subtree of this
 		DUT, all with the same parameters."""
-		for voltage_dn in self.list_subdatanodes_of_task('voltages'):
-			for two_pixels_analysis_dn in voltage_dn.list_subdatanodes_of_task('two_pixels_efficiency_analyses'):
-				two_pixels_analysis_dn.plot_hits(hit_amplitude_threshold)
-				two_pixels_analysis_dn.binned_efficiency_vs_distance(
-					hit_amplitude_threshold = hit_amplitude_threshold,
-					bin_size_meters = bin_size_meters,
+		CATEGORY_ORDERS = {
+			'which_pixel': ['none','left','right','both'],
+		}
+		
+		with self.handle_task('run_two_pixels_efficiency_analyses') as task:
+			efficiency_data = [] # Store the data here so then I can create some plots sumarizing at the DUT level.
+			for voltage_dn in self.list_subdatanodes_of_task('voltages'):
+				for two_pixels_analysis_dn in voltage_dn.list_subdatanodes_of_task('two_pixels_efficiency_analyses'):
+					two_pixels_analysis_dn.plot_hits(hit_amplitude_threshold)
+					two_pixels_analysis_dn.binned_efficiency_vs_distance(
+						hit_amplitude_threshold = hit_amplitude_threshold,
+						bin_size_meters = bin_size_meters,
+					)
+					eff = pandas.read_pickle(two_pixels_analysis_dn.path_to_directory_of_task('efficiency_vs_distance')/'efficiency.pickle')
+					eff['voltage'] = int(voltage_dn.datanode_name.replace('V',''))
+					eff['two_pixels_efficiency_analysis_name'] = two_pixels_analysis_dn.datanode_name
+					efficiency_data.append(eff)
+			efficiency_data = pandas.concat(efficiency_data)
+			efficiency_data.set_index(['voltage','two_pixels_efficiency_analysis_name'], append=True, inplace=True)
+			
+			save_dataframe(efficiency_data, 'efficiency', task.path_to_directory_of_my_task)
+			
+			for analysis_name, data in efficiency_data.groupby('two_pixels_efficiency_analysis_name'):
+				fig = px.line(
+					title = f'Efficiency vs distance {analysis_name}<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
+					data_frame = data.reset_index().sort_values(['voltage','Position (m)']),
+					color = 'which_pixel',
+					y = 'val (%)',
+					x = 'Position (m)',
+					error_y = 'err_high (%)',
+					error_y_minus = 'err_low (%)',
+					facet_col = 'voltage',
+					line_shape = 'hvh',
+					labels = {
+						'val (%)': 'Efficiency (%)',
+					},
+					category_orders = CATEGORY_ORDERS,
 				)
+				fig.write_html(
+					task.path_to_directory_of_my_task/f'efficiency_vs_distance_{analysis_name}.html',
+					include_plotlyjs = 'cdn',
+				)
+		logging.info(f'Plots of efficiency vs distance available in {self.pseudopath} ✅')
 	
 if __name__ == '__main__':
 	import sys
