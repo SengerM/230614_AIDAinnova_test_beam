@@ -1,7 +1,6 @@
 from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import logging
-from DUT_analysis import DatanodeHandlerDUTAnalyses
-from VoltagePoint import DatanodeHandlerVoltagePoint
+from DUT_analysis import DatanodeHandlerDUTAnalysis
 
 if __name__ == '__main__':
 	import sys
