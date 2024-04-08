@@ -209,7 +209,7 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 				# Now compute the efficiency:
 				for which_pixel in {'left','right','both'}:
 					k_detected_hits = this_bin_counts[which_pixel]
-					n_total_hits = this_bin_counts[['left','right','both','none']].sum()
+					n_total_hits = this_bin_counts[['both','none']].sum() # Hits that either fired one pixel ('both') or did not fire any pixel ('none').
 					if n_total_hits > 0: # If there is at least 1 track..
 						efficiency_confidence_interval = binomtest(
 							k = k_detected_hits, # Number of successes, i.e. number of detected hits.
