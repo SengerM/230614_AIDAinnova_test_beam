@@ -9,7 +9,7 @@ import pandas
 from scipy.stats import binomtest
 from utils import save_dataframe
 
-def create_two_pixels_efficiency_analysis(voltage_point_dn:DatanodeHandler, analysis_name:str, left_pixel_chubut_channel_number:int, right_pixel_chubut_channel_number:int, x_center_of_the_pair_of_pixels:float, y_center_of_the_pair_of_pixels:float, rotation_angle_deg:float, y_acceptance_width:float):
+def create_two_pixels_efficiency_analysis(voltage_point_dn:DatanodeHandler, analysis_name:str, left_pixel_chubut_channel_number:int, right_pixel_chubut_channel_number:int, x_center_of_the_pair_of_pixels:float, y_center_of_the_pair_of_pixels:float, rotation_angle_deg:float, y_acceptance_width:float, if_exists:str='raise error'):
 	"""Create a new "two pixels efficiency analysis" inside a voltage point.
 	
 	Arguments
@@ -18,7 +18,7 @@ def create_two_pixels_efficiency_analysis(voltage_point_dn:DatanodeHandler, anal
 		A `DatanodeHandler` pointing to a voltage point.
 	"""
 	with voltage_point_dn.handle_task('two_pixels_efficiency_analyses', check_datanode_class='voltage_point', keep_old_data=True) as task:
-		analysis_dn = task.create_subdatanode(analysis_name, subdatanode_class='two_pixels_efficiency_analysis')
+		analysis_dn = task.create_subdatanode(analysis_name, subdatanode_class='two_pixels_efficiency_analysis', if_exists=if_exists)
 		
 		with analysis_dn.handle_task('analysis_config') as analysis_config_task:
 			with open(analysis_config_task.path_to_directory_of_my_task/'config.json', 'w') as ofile:

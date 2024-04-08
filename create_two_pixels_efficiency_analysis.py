@@ -1,6 +1,6 @@
 from datanodes import DatanodeHandler # https://github.com/SengerM/datanodes
 import logging
-from EfficiencyAnalysis import create_two_pixels_efficiency_analysis
+from DUT_analysis import DatanodeHandlerDUTAnalyses
 from VoltagePoint import DatanodeHandlerVoltagePoint
 
 if __name__ == '__main__':
@@ -16,8 +16,8 @@ if __name__ == '__main__':
 	
 	set_my_template_as_default()
 	
-	create_two_pixels_efficiency_analysis(
-		voltage_point_dn = DatanodeHandlerVoltagePoint(input('Path to voltage point datanode? ')),
+	dn = DatanodeHandlerDUTAnalysis(input('Path to DUT analysis? '))
+	dn.create_two_pixels_efficiency_analyses(
 		analysis_name = input('Analysis name? '),
 		left_pixel_chubut_channel_number = int(input('Left pixel chubut channel number? ')),
 		right_pixel_chubut_channel_number = int(input('Right pixel chubut channel number? ')),

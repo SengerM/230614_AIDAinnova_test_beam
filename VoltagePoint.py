@@ -7,6 +7,7 @@ import TBBatch
 import DUT_analysis
 import plotly.express as px
 import numpy
+import EfficiencyAnalysis
 
 def create_voltage_point(DUT_analysis_dn:DatanodeHandler, voltage:int, EUDAQ_runs:set):
 	"""Create a new voltage point within a DUT analysis.
@@ -42,6 +43,12 @@ def create_voltage_point(DUT_analysis_dn:DatanodeHandler, voltage:int, EUDAQ_run
 class DatanodeHandlerVoltagePoint(DatanodeHandler):
 	def __init__(self, path_to_datanode:Path):
 		super().__init__(path_to_datanode=path_to_datanode, check_datanode_class='voltage_point')
+	
+	def list_subdatanodes_of_task(self, task_name:str):
+		subdatanodes = super().list_subdatanodes_of_task(task_name)
+		if task_name == 'two_pixels_efficiency_analyses':
+			subdatanodes = [_.as_type(EfficiencyAnalysis.DatanodeHandlerTwoPixelsEfficiencyAnalysis) for _ in subdatanodes]
+		return subdatanodes
 	
 	@property
 	def parent(self):

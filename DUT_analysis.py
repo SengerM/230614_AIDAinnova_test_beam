@@ -7,6 +7,7 @@ import json
 import VoltagePoint
 import dominate
 import dominate.tags as tags
+import EfficiencyAnalysis
 	
 def create_DUT_analysis(TB_batch_dn:DatanodeHandler, DUT_name:str, plane_number:int, chubut_channel_numbers:set):
 	"""Creates a datanode to handle the analysis of one DUT.
@@ -173,6 +174,35 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 				print(f"Let's start over...")
 		logging.info(f'Transformation parameters configured for {self.pseudopath} ✅')
 	
+	def create_two_pixels_efficiency_analyses(self, analysis_name:str, left_pixel_chubut_channel_number:int, right_pixel_chubut_channel_number:int, x_center_of_the_pair_of_pixels:float, y_center_of_the_pair_of_pixels:float, rotation_angle_deg:float, y_acceptance_width:float):
+		"""Create a "two pixels efficiency analysis" for all the voltage 
+		points within this DUT. For the arguments, see the documentation
+		of the function that actually does the job."""
+		
+		for voltage_point_dn in self.list_subdatanodes_of_task('voltages'):
+			EfficiencyAnalysis.create_two_pixels_efficiency_analysis(
+				voltage_point_dn = voltage_point_dn,
+				analysis_name = analysis_name,
+				left_pixel_chubut_channel_number = left_pixel_chubut_channel_number,
+				right_pixel_chubut_channel_number = right_pixel_chubut_channel_number,
+				x_center_of_the_pair_of_pixels = x_center_of_the_pair_of_pixels,
+				y_center_of_the_pair_of_pixels = y_center_of_the_pair_of_pixels,
+				rotation_angle_deg = rotation_angle_deg,
+				y_acceptance_width = y_acceptance_width,
+			)
+		logging.info(f'Created "two pixels efficiency analyses" for all the voltages in {self.pseudopath} ✅')
+	
+	def run_two_pixels_efficiency_analyses(self, hit_amplitude_threshold:float, bin_size_meters:float):
+		"""Run all the analyses that are defined in the subtree of this
+		DUT, all with the same parameters."""
+		for voltage_dn in self.list_subdatanodes_of_task('voltages'):
+			for two_pixels_analysis_dn in voltage_dn.list_subdatanodes_of_task('two_pixels_efficiency_analyses'):
+				two_pixels_analysis_dn.plot_hits(hit_amplitude_threshold)
+				two_pixels_analysis_dn.binned_efficiency_vs_distance(
+					hit_amplitude_threshold = hit_amplitude_threshold,
+					bin_size_meters = bin_size_meters,
+				)
+	
 if __name__ == '__main__':
 	import sys
 	import argparse
@@ -209,6 +239,23 @@ if __name__ == '__main__':
 		dest = 'centering_transformation',
 		action = 'store_true',
 	)
+	parser.add_argument(
+		'--run_two_pixels_efficiency_analyses',
+		dest = 'run_two_pixels_efficiency_analyses',
+		action = 'store_true',
+	)
+	parser.add_argument(
+		'--hit_amplitude_threshold',
+		dest = 'hit_amplitude_threshold',
+		type = float,
+		required = False,
+	)
+	parser.add_argument(
+		'--bin_size_meters',
+		dest = 'bin_size_meters',
+		type = float,
+		required = False,
+	)
 	args = parser.parse_args()
 	
 	DUT_analysis_dn = DatanodeHandlerDUTAnalysis(args.datanode)
@@ -218,3 +265,8 @@ if __name__ == '__main__':
 		DUT_analysis_dn.plot_hits(amplitude_threshold = .01)
 	if args.centering_transformation:
 		DUT_analysis_dn.centering_transformation()
+	if args.run_two_pixels_efficiency_analyses:
+		DUT_analysis_dn.run_two_pixels_efficiency_analyses(
+			hit_amplitude_threshold = args.hit_amplitude_threshold,
+			bin_size_meters = args.bin_size_meters,
+		)
