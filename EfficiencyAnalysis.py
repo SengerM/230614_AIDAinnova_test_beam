@@ -169,7 +169,7 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 			hits = hits.query('within_ROI == True') # For the efficiency analysis we only use the hits inside the ROI.
 			
 			fig = px.histogram(
-				title = f'Hits histogram<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)}</sup>',
+				title = f'Hits histogram<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
 				data_frame = hits,
 				x = 'x (m)',
 				color = 'which_pixel',
@@ -247,7 +247,7 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 			position.index.name = 'n_bin'
 			
 			fig = px.line(
-				title = f'Counts used for efficiency vs distance calculation<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)}</sup>',
+				title = f'Counts used for efficiency vs distance calculation<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
 				data_frame = counts.to_frame().join(position, on='n_bin').reset_index().sort_values('Position (m)'),
 				color = 'which_pixel',
 				y = 'count',
@@ -264,7 +264,7 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 			for col in {'val','err_low','err_high','low','high'}:
 				efficiencies[f'{col} (%)'] = efficiencies[col]*100
 			fig = px.line(
-				title = f'Efficiency vs distance<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)}</sup>',
+				title = f'Efficiency vs distance<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
 				data_frame = efficiencies.reset_index().sort_values('Position (m)'),
 				color = 'which_pixel',
 				y = 'val (%)',
