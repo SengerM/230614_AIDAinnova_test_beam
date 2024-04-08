@@ -136,12 +136,10 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 		with self.handle_task('plot_hits') as task:
 			hits = self.load_hits_on_DUT(hit_amplitude_threshold=hit_amplitude_threshold)
 			
-			# ~ hits = hits.query('within_ROI == True')
-			
 			if len(hits) > 9999:
-				hits = hits.sample(n=9999)
+				hits = hits.sample(n=9999) # We don't want the plot to have soooo many points.
 			fig = px.scatter(
-				title = f'Hits used in analysis {self.datanode_name}<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
+				title = f'Hits used in efficiency vs distance calculation<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
 				data_frame = hits.reset_index(),
 				x = 'x (m)',
 				y = 'y (m)',
