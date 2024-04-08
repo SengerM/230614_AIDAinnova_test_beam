@@ -3,6 +3,8 @@ import logging
 import VoltagePoint
 from pathlib import Path
 import json
+import numpy
+import plotly.express as px
 
 def create_two_pixels_efficiency_analysis(voltage_point_dn:DatanodeHandler, analysis_name:str, left_pixel_chubut_channel_number:int, right_pixel_chubut_channel_number:int, x_center_of_the_pair_of_pixels:float, y_center_of_the_pair_of_pixels:float, rotation_angle_deg:float, y_acceptance_width:float):
 	"""Create a new "two pixels efficiency analysis" inside a voltage point.
@@ -31,7 +33,6 @@ def create_two_pixels_efficiency_analysis(voltage_point_dn:DatanodeHandler, anal
 				)
 		
 	logging.info(f'Analysis efficiency {repr(str(analysis_dn.pseudopath))} was created. ✅')
-	
 
 class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 	def __init__(self, path_to_datanode:Path):
@@ -41,3 +42,119 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 	def parent(self):
 		return super().parent.as_type(VoltagePoint.DatanodeHandlerVoltagePoint)
 	
+	@property
+	def analysis_config(self):
+		if not hasattr(self, '_analysis_config'):
+			with open(self.path_to_directory_of_task('analysis_config')/'config.json', 'r') as ifile:
+				self._analysis_config = json.load(ifile)
+		return self._analysis_config
+	
+	def load_hits_on_DUT(self, hit_amplitude_threshold:float):
+		"""Load hits on DUT and indicates whether it is within the ROI
+		for this analysis as well as whether it has a hit in left or right
+		pixels according to the configuration of this analysis.
+		
+		Arguments
+		---------
+		hit_amplitude_threshold: float
+			Value of amplitude to be considered as a "pixel active".
+			
+		Returns
+		-------
+		hits: pandas.DataFrame
+			Example:
+			```
+										  x (m)     y (m)  within_ROI   left  right which_pixel
+			EUDAQ_run n_event n_track                                                          
+			226       43      0       -0.000342  0.001269       False  False  False        none
+					  77      0       -0.000330 -0.002630       False  False  False        none
+					  90      0       -0.000647  0.001220       False  False  False        none
+					  126     0       -0.000037  0.000443       False  False  False        none
+					  130     0       -0.000262  0.000049        True   True  False        left
+			...                             ...       ...         ...    ...    ...         ...
+			227       113473  2       -0.000616  0.000120       False  False  False        none
+					  113476  0        0.000403  0.000915       False  False  False        none
+					  113477  0        0.000447 -0.000425       False  False  False        none
+					  113481  0       -0.000151  0.000594       False  False  False        none
+					  113485  0        0.003883 -0.002768       False  False  False        none
+
+			[23409 rows x 6 columns]
+			```
+		"""
+		voltage_point_dn = self.parent
+		hits = voltage_point_dn.load_hits_on_DUT()
+		
+		# Apply transformation to center the hits in xy:
+		for xy in ['x', 'y']:
+			hits[f'{xy} (m)'] -= self.analysis_config[f'{xy}_center_of_the_pair_of_pixels']
+			r = (hits['x (m)']**2 + hits['y (m)']**2)**.5
+			phi = numpy.arctan2(hits['y (m)'], hits['x (m)'])
+			hits['x (m)'], hits['y (m)'] = r*numpy.cos(phi+self.analysis_config['rotation_angle_deg']*numpy.pi/180), r*numpy.sin(phi+self.analysis_config['rotation_angle_deg']*numpy.pi/180)
+		
+		# Create a column that tells whether the hit is inside the ROI for this analysis:
+		hits['within_ROI'] = (hits['y (m)'] > -self.analysis_config['y_acceptance_width']) & (hits['y (m)'] < self.analysis_config['y_acceptance_width'])
+		
+		# Now indicate if left or right pixels had a hit:
+		pixels_with_signal = self.parent.load_parsed_from_waveforms(
+			where = f'`Amplitude (V)` < {-abs(hit_amplitude_threshold)} AND `Time over 50% (s)` > 1-9',
+			variables = 'Amplitude (V)',
+		)
+		pixels_with_signal = pixels_with_signal.unstack(['n_CAEN','CAEN_n_channel']) # Unstack these so now we have one event per row.
+		pixels_with_signal = pixels_with_signal['Amplitude (V)'] # Drop useless column level.
+		pixels_with_signal = pixels_with_signal.notnull().astype(bool) # Convert amplitudes to boolean, indicating if there was a hit or not
+		if len(set(pixels_with_signal.columns.get_level_values('n_CAEN'))) != 1:
+			raise NotImplementedError('Had no time to implement this for more than 1 CAEN, sorry.')
+		# Now it is just a stupid mapping from CAEN_n_channel to left or right, but it is super intricate:
+		chubut_channels_numbers_to_leftright_mapping = {self.analysis_config[key]: key.split('_')[0] for key in {'left_pixel_chubut_channel_number', 'right_pixel_chubut_channel_number'}}
+		batch_dn = self.parent.parent.parent
+		batch_dn.check_datanode_class('TB_batch') # Not needed, but just in case...
+		channels_mapping = batch_dn.setup_config.query(f'chubut_channel in {list(chubut_channels_numbers_to_leftright_mapping.keys())}')[['chubut_channel','CAEN_n_channel']]
+		channels_mapping['leftright'] = [chubut_channels_numbers_to_leftright_mapping[chubut_channel] for chubut_channel in channels_mapping['chubut_channel']]
+		pixels_with_signal.columns = [channels_mapping.loc[channels_mapping['CAEN_n_channel']==ch,'leftright'].values[0] for ch in pixels_with_signal.columns.get_level_values('CAEN_n_channel')]
+		
+		hits = hits.join(pixels_with_signal)
+		hits[['left','right']] = hits[['left','right']].fillna(False) # Fill all the NaN values resulting from the join operation with `False`, i.e. not a hit.
+		
+		# Add an extra column tagging which pixel was hit, useful for plots:
+		which_pixel = hits[['left','right']].apply(
+			lambda x: 
+				'none' if x['left']==x['right']==False 
+				else 'both' if x['left']==x['right']==True
+				else 'left' if x['left']==True and x['right'] == False
+				else 'right',
+			axis = 1,
+		)
+		which_pixel.name = 'which_pixel'
+		hits = hits.join(which_pixel)
+		
+		return hits
+	
+	def plot_hits(self, hit_amplitude_threshold:float):
+		with self.handle_task('plot_hits') as task:
+			hits = self.load_hits_on_DUT(hit_amplitude_threshold=hit_amplitude_threshold)
+			
+			# ~ hits = hits.query('within_ROI == True')
+			
+			if len(hits) > 9999:
+				hits = hits.sample(n=9999)
+			fig = px.scatter(
+				title = f'Hits used in analysis {self.datanode_name}<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
+				data_frame = hits.reset_index(),
+				x = 'x (m)',
+				y = 'y (m)',
+				color = 'which_pixel',
+				facet_col = 'within_ROI',
+				hover_data = ['EUDAQ_run','n_event'],
+				category_orders = {
+					'which_pixel': ['none','left','right','both'],
+				},
+			)
+			fig.update_yaxes(
+				scaleanchor="x",
+				scaleratio=1,
+			)
+			fig.write_html(
+				task.path_to_directory_of_my_task/'hits.html',
+				include_plotlyjs = 'cdn',
+			)
+		logging.info(f'Plotted the hits in {self.pseudopath} ✅')
