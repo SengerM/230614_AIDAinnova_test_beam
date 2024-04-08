@@ -68,7 +68,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 		with open(self.path_to_directory_of_task('EUDAQ_runs')/'runs.json', 'r') as ifile:
 			EUDAQ_runs_from_this_voltage = json.load(ifile)
 		if not isinstance(EUDAQ_runs_from_this_voltage, list) or len(EUDAQ_runs_from_this_voltage) == 0:
-			raise RuntimeError(f'No EUDAQ runs associated to this voltage...')
+			raise RuntimeError(f'No EUDAQ runs associated to voltage {self.pseudopath}...')
 		
 		setup_config_this_DUT = setup_config.query(f'plane_number=={this_DUT_plane_number} and chubut_channel in {sorted(this_DUT_chubut_channels)}')
 		
