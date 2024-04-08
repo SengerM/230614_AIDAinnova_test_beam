@@ -5,6 +5,9 @@ from pathlib import Path
 import json
 import numpy
 import plotly.express as px
+import pandas
+from scipy.stats import binomtest
+from utils import save_dataframe
 
 def create_two_pixels_efficiency_analysis(voltage_point_dn:DatanodeHandler, analysis_name:str, left_pixel_chubut_channel_number:int, right_pixel_chubut_channel_number:int, x_center_of_the_pair_of_pixels:float, y_center_of_the_pair_of_pixels:float, rotation_angle_deg:float, y_acceptance_width:float):
 	"""Create a new "two pixels efficiency analysis" inside a voltage point.
@@ -158,3 +161,131 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 				include_plotlyjs = 'cdn',
 			)
 		logging.info(f'Plotted the hits in {self.pseudopath} ✅')
+	
+	def binned_efficiency_vs_distance(self, hit_amplitude_threshold:float, bin_size_meters:float):
+		CATEGORY_ORDERS = {
+			'which_pixel': ['none','left','right','both'],
+		}
+		with self.handle_task('efficiency_vs_distance') as task:
+			hits = self.load_hits_on_DUT(hit_amplitude_threshold=hit_amplitude_threshold)
+			hits = hits.query('within_ROI == True') # For the efficiency analysis we only use the hits inside the ROI.
+			
+			fig = px.histogram(
+				title = f'Hits histogram<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)}</sup>',
+				data_frame = hits,
+				x = 'x (m)',
+				color = 'which_pixel',
+				category_orders = CATEGORY_ORDERS,
+			)
+			fig.write_html(
+				task.path_to_directory_of_my_task/'hits_histogram.html',
+				include_plotlyjs = 'cdn',
+			)
+			
+			bins_edges = numpy.arange(
+				start = hits['x (m)'].min(),
+				stop = hits['x (m)'].max(),
+				step = bin_size_meters,
+			)
+			
+			counts = []
+			efficiencies = []
+			for n_bin, bin_left_edge in enumerate(bins_edges[:-1]):
+				bin_right_edge = bins_edges[n_bin + 1]
+				thisbinhits = hits.query(f'`x (m)` > {bin_left_edge} and `x (m)` < {bin_right_edge}')
+				this_bin_counts = thisbinhits.groupby('which_pixel').count()
+				this_bin_counts = this_bin_counts.iloc[:,0] # Keep only the first column, whichever it is, as they are all identical.
+				for which_pixel in set(hits['which_pixel']):
+					if which_pixel not in this_bin_counts:
+						this_bin_counts[which_pixel] = 0 # Here I add missing values, which happens when the count is 0.
+				# For computing the efficiency, "both" means that it was detected by left, right or by the two of them, so I have to sum them now:
+				both_counted = this_bin_counts[['left','right','both']].sum()
+				left_counted = this_bin_counts[['left','both']].sum()
+				right_counted = this_bin_counts[['right','both']].sum()
+				this_bin_counts['left'] = left_counted
+				this_bin_counts['right'] = right_counted
+				this_bin_counts['both'] = both_counted
+				this_bin_counts['n_bin'] = n_bin
+				counts.append(this_bin_counts)
+				
+				# Now compute the efficiency:
+				for which_pixel in {'left','right','both'}:
+					k_detected_hits = this_bin_counts[which_pixel]
+					n_total_hits = this_bin_counts[['left','right','both','none']].sum()
+					if n_total_hits > 0: # If there is at least 1 track..
+						efficiency_confidence_interval = binomtest(
+							k = k_detected_hits, # Number of successes, i.e. number of detected hits.
+							n = n_total_hits, # Number of trials, i.e. total hits that went through.
+						).proportion_ci(confidence_level = .68)
+						low = efficiency_confidence_interval.low
+						high = efficiency_confidence_interval.high
+						val = k_detected_hits/n_total_hits
+					else: # If there is not even a single track in this bin...
+						low = float('NaN')
+						high = float('NaN')
+						val = float('NaN')
+					efficiencies.append(
+						pandas.Series(
+							{
+								'low': low,
+								'high': high,
+								'val': val,
+								'err_low': val - low,
+								'err_high': high - val,
+								'which_pixel': which_pixel,
+								'n_bin': n_bin,
+							}
+						),
+					)
+			counts = pandas.DataFrame.from_records(counts).set_index('n_bin')
+			counts = counts.stack('which_pixel')
+			counts.name = 'count'
+			efficiencies = pandas.DataFrame.from_records(efficiencies).set_index(['n_bin','which_pixel'])
+			
+			position = pandas.Series(
+				(bins_edges[:-1] + bins_edges[1:])/2,
+				name = 'Position (m)',
+			)
+			position.index.name = 'n_bin'
+			
+			fig = px.line(
+				title = f'Counts used for efficiency vs distance calculation<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)}</sup>',
+				data_frame = counts.to_frame().join(position, on='n_bin').reset_index().sort_values('Position (m)'),
+				color = 'which_pixel',
+				y = 'count',
+				x = 'Position (m)',
+				line_shape = 'hvh',
+				category_orders = CATEGORY_ORDERS,
+			)
+			fig.write_html(
+				task.path_to_directory_of_my_task/'counts_vs_distance.html',
+				include_plotlyjs = 'cdn',
+			)
+			
+			efficiencies = efficiencies.join(position, on='n_bin')
+			for col in {'val','err_low','err_high','low','high'}:
+				efficiencies[f'{col} (%)'] = efficiencies[col]*100
+			fig = px.line(
+				title = f'Efficiency vs distance<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)}</sup>',
+				data_frame = efficiencies.reset_index().sort_values('Position (m)'),
+				color = 'which_pixel',
+				y = 'val (%)',
+				x = 'Position (m)',
+				error_y = 'err_high (%)',
+				error_y_minus = 'err_low (%)',
+				line_shape = 'hvh',
+				labels = {
+					'val (%)': 'Efficiency (%)',
+				},
+				category_orders = CATEGORY_ORDERS,
+			)
+			fig.write_html(
+				task.path_to_directory_of_my_task/'efficiency_vs_distance.html',
+				include_plotlyjs = 'cdn',
+			)
+			
+
+			for name,df in {'bins':position,'counts':counts,'efficiency':efficiencies}.items():
+				save_dataframe(df, name, task.path_to_directory_of_my_task)
+			
+			logging.info(f'Computed efficiency vs distance (and produced plots) in {self.pseudopath} ✅')
