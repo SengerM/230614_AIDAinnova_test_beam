@@ -214,7 +214,13 @@ class DatanodeHandlerTBBatch(DatanodeHandler):
 		signals_connections['DUT_name_rowcol'] = signals_connections[['DUT_name','row','col']].apply(lambda x: f'{x["DUT_name"]} ({x["row"]},{x["col"]})', axis=1)
 		
 		return signals_connections
-
+	
+	@property
+	def setup_config(self):
+		if not hasattr(self, '_setup_config'):
+			self._setup_config = self.load_setup_configuration_info()
+		return self._setup_config
+	
 if __name__ == '__main__':
 	import sys
 	import argparse
