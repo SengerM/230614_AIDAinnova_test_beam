@@ -197,9 +197,9 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 					if which_pixel not in this_bin_counts:
 						this_bin_counts[which_pixel] = 0 # Here I add missing values, which happens when the count is 0.
 				# For computing the efficiency, "both" means that it was detected by left, right or by the two of them, so I have to sum them now:
-				both_counted = this_bin_counts[['left','right','both']].sum()
-				left_counted = this_bin_counts[['left','both']].sum()
-				right_counted = this_bin_counts[['right','both']].sum()
+				both_counted = this_bin_counts[list({'left','right','both'}&set(this_bin_counts.index.values))].sum()
+				left_counted = this_bin_counts[list({'left','both'}&set(this_bin_counts.index.values))].sum()
+				right_counted = this_bin_counts[list({'right','both'}&set(this_bin_counts.index.values))].sum()
 				this_bin_counts['left'] = left_counted
 				this_bin_counts['right'] = right_counted
 				this_bin_counts['both'] = both_counted
