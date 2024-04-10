@@ -52,7 +52,7 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 				self._analysis_config = json.load(ifile)
 		return self._analysis_config
 	
-	def load_hits_on_DUT(self, hit_amplitude_threshold:float):
+	def load_hits_on_DUT(self, hit_amplitude_threshold:float, max_chi2ndof:float=None):
 		"""Load hits on DUT and indicates whether it is within the ROI
 		for this analysis as well as whether it has a hit in left or right
 		pixels according to the configuration of this analysis.
@@ -85,7 +85,7 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 			```
 		"""
 		voltage_point_dn = self.parent
-		hits = voltage_point_dn.load_hits_on_DUT()
+		hits = voltage_point_dn.load_hits_on_DUT(max_chi2ndof=max_chi2ndof)
 		
 		# Apply transformation to center the hits in xy:
 		for xy in ['x', 'y']:
@@ -132,14 +132,14 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 		
 		return hits
 	
-	def plot_hits(self, hit_amplitude_threshold:float):
+	def plot_hits(self, hit_amplitude_threshold:float, max_chi2ndof:float=None):
 		with self.handle_task('plot_hits') as task:
-			hits = self.load_hits_on_DUT(hit_amplitude_threshold=hit_amplitude_threshold)
+			hits = self.load_hits_on_DUT(hit_amplitude_threshold=hit_amplitude_threshold, max_chi2ndof=max_chi2ndof)
 			
 			if len(hits) > 9999:
 				hits = hits.sample(n=9999) # We don't want the plot to have soooo many points.
 			fig = px.scatter(
-				title = f'Hits used in efficiency vs distance calculation<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
+				title = f'Hits used in efficiency vs distance calculation<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV' + (f', χ<sup>2</sup>/n<sub>deg of freedom</sub> < {max_chi2ndof}' if max_chi2ndof is not None else '') + '</sup>',
 				data_frame = hits.reset_index(),
 				x = 'x (m)',
 				y = 'y (m)',
@@ -160,16 +160,18 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 			)
 		logging.info(f'Plotted the hits in {self.pseudopath} ✅')
 	
-	def binned_efficiency_vs_distance(self, hit_amplitude_threshold:float, bin_size_meters:float):
+	def binned_efficiency_vs_distance(self, hit_amplitude_threshold:float, bin_size_meters:float, max_chi2ndof:float=None):
 		CATEGORY_ORDERS = {
 			'which_pixel': ['none','left','right','both'],
 		}
+		
+		plots_subtitle = f'{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV' + (f', χ<sup>2</sup>/n<sub>deg of freedom</sub> < {max_chi2ndof}' if max_chi2ndof is not None else '')
 		with self.handle_task('efficiency_vs_distance') as task:
-			hits = self.load_hits_on_DUT(hit_amplitude_threshold=hit_amplitude_threshold)
+			hits = self.load_hits_on_DUT(hit_amplitude_threshold=hit_amplitude_threshold, max_chi2ndof=max_chi2ndof)
 			hits = hits.query('within_ROI == True') # For the efficiency analysis we only use the hits inside the ROI.
 			
 			fig = px.histogram(
-				title = f'Hits histogram<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
+				title = f'Hits histogram<br><sup>{plots_subtitle}</sup>',
 				data_frame = hits,
 				x = 'x (m)',
 				color = 'which_pixel',
@@ -247,7 +249,7 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 			position.index.name = 'n_bin'
 			
 			fig = px.line(
-				title = f'Counts used for efficiency vs distance calculation<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
+				title = f'Counts used for efficiency vs distance calculation<br><sup>{plots_subtitle}</sup>',
 				data_frame = counts.to_frame().join(position, on='n_bin').reset_index().sort_values('Position (m)'),
 				color = 'which_pixel',
 				y = 'count',
@@ -264,7 +266,7 @@ class DatanodeHandlerTwoPixelsEfficiencyAnalysis(DatanodeHandler):
 			for col in {'val','err_low','err_high','low','high'}:
 				efficiencies[f'{col} (%)'] = efficiencies[col]*100
 			fig = px.line(
-				title = f'Efficiency vs distance<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
+				title = f'Efficiency vs distance<br><sup>{plots_subtitle}</sup>',
 				data_frame = efficiencies.reset_index().sort_values('Position (m)'),
 				color = 'which_pixel',
 				y = 'val (%)',

@@ -122,7 +122,7 @@ class DatanodeHandlerEUDAQRun(DatanodeHandler):
 				n += 1
 			raise RuntimeError(f'Could not find the offset...')
 	
-	def load_hits_on_DUT(self, DUT_name:str, apply_EUDAQ_offset_to_fix_bug:bool=True):
+	def load_hits_on_DUT(self, DUT_name:str, max_chi2ndof:float=None, apply_EUDAQ_offset_to_fix_bug:bool=True):
 		"""Load all tracks from one EUDAQ run, which have a hit in the CROC 
 		(i.e. that have `RD53B_114_associateHit==1`).
 		
@@ -134,6 +134,10 @@ class DatanodeHandlerEUDAQRun(DatanodeHandler):
 			Normally you would not use this, and keep it `True`. This will
 			require that you previously run the `find_EUDAQ_offset` task in
 			this `EUDAQ_run_dn`.
+		max_chi2ndof: float, default None
+			If a value is passed, only tracks with a chi^2/n_degrees_of_freedom
+			lower than this value are returned. Also, a new data column
+			to the returned data frame named `chi2ndof` is added.
 		
 		Returns
 		-------
@@ -185,8 +189,14 @@ class DatanodeHandlerEUDAQRun(DatanodeHandler):
 		
 		tracks_multiplicity = data[data.columns[0]].groupby('n_event').count()
 		tracks_multiplicity.name = 'tracks_multiplicity'
-		
 		data = data.loc[tracks_multiplicity[tracks_multiplicity==1].index] # Drop track multiplicity > 1
+		
+		if max_chi2ndof is not None:
+			chi2_data = pandas.read_sql(
+				f'SELECT n_event,n_track,chi2/ndof as chi2ndof FROM dataframe_table WHERE chi2ndof < {max_chi2ndof}',
+				con = sqlite3.connect(self.path_to_directory_of_task('extract_tracks_parameters_from_ROOT_to_nice_peoples_format')/'tracks_data.sqlite'),
+			).set_index(['n_event','n_track'])
+			data = chi2_data.join(data, how='inner') # Keep only those tracks that satisfy the chi2 condition.
 		
 		return data
 

@@ -194,7 +194,7 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 			)
 		logging.info(f'Created "two pixels efficiency analyses" for all the voltages in {self.pseudopath} ✅')
 	
-	def run_two_pixels_efficiency_analyses(self, hit_amplitude_threshold:float, bin_size_meters:float):
+	def run_two_pixels_efficiency_analyses(self, hit_amplitude_threshold:float, bin_size_meters:float, max_chi2ndof:float=None):
 		"""Run all the analyses that are defined in the subtree of this
 		DUT, all with the same parameters."""
 		CATEGORY_ORDERS = {
@@ -205,10 +205,11 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 			efficiency_data = [] # Store the data here so then I can create some plots sumarizing at the DUT level.
 			for voltage_dn in self.list_subdatanodes_of_task('voltages'):
 				for two_pixels_analysis_dn in voltage_dn.list_subdatanodes_of_task('two_pixels_efficiency_analyses'):
-					two_pixels_analysis_dn.plot_hits(hit_amplitude_threshold)
+					two_pixels_analysis_dn.plot_hits(hit_amplitude_threshold, max_chi2ndof=max_chi2ndof)
 					two_pixels_analysis_dn.binned_efficiency_vs_distance(
 						hit_amplitude_threshold = hit_amplitude_threshold,
 						bin_size_meters = bin_size_meters,
+						max_chi2ndof=max_chi2ndof,
 					)
 					eff = pandas.read_pickle(two_pixels_analysis_dn.path_to_directory_of_task('efficiency_vs_distance')/'efficiency.pickle')
 					eff['voltage'] = int(voltage_dn.datanode_name.replace('V',''))
@@ -219,9 +220,10 @@ class DatanodeHandlerDUTAnalysis(DatanodeHandler):
 			
 			save_dataframe(efficiency_data, 'efficiency', task.path_to_directory_of_my_task)
 			
+			plots_subtitle = f'{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV' + (f', χ<sup>2</sup>/n<sub>deg of freedom</sub> < {max_chi2ndof}' if max_chi2ndof is not None else '')
 			for analysis_name, data in efficiency_data.groupby('two_pixels_efficiency_analysis_name'):
 				fig = px.line(
-					title = f'Efficiency vs distance {analysis_name}<br><sup>{self.pseudopath}, amplitude < {-abs(hit_amplitude_threshold)*1e3} mV</sup>',
+					title = f'Efficiency vs distance {analysis_name}<br><sup>{plots_subtitle}</sup>',
 					data_frame = data.reset_index().sort_values(['voltage','Position (m)']),
 					color = 'which_pixel',
 					y = 'val (%)',
@@ -289,10 +291,17 @@ if __name__ == '__main__':
 		required = False,
 	)
 	parser.add_argument(
+		'--max_chi2_n_dof',
+		dest = 'max_chi2_n_dof',
+		type = float,
+		required = False,
+	)
+	parser.add_argument(
 		'--bin_size_meters',
 		dest = 'bin_size_meters',
 		type = float,
 		required = False,
+		default = 50e-6
 	)
 	args = parser.parse_args()
 	
@@ -307,4 +316,5 @@ if __name__ == '__main__':
 		DUT_analysis_dn.run_two_pixels_efficiency_analyses(
 			hit_amplitude_threshold = args.hit_amplitude_threshold,
 			bin_size_meters = args.bin_size_meters,
+			max_chi2ndof = args.max_chi2_n_dof,
 		)

@@ -138,7 +138,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 					include_plotlyjs = 'cdn',
 				)
 
-	def load_hits_on_DUT(self, use_centering_transformation:bool=False):
+	def load_hits_on_DUT(self, use_centering_transformation:bool=False, max_chi2ndof:float=None):
 		"""Load all the hits on the DUT for this voltage point.
 		
 		Arguments
@@ -147,6 +147,10 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 			If `True`, it will be attempted to read the transformation
 			parameters from the parent DUT of the voltage point and
 			apply it to the tracks before returning them.
+		max_chi2ndof: float, default None
+			If a value is passed, only tracks with a chi^2/n_degrees_of_freedom
+			lower than this value are returned. Also, a new data column
+			to the returned data frame named `chi2ndof` is added.
 		
 		Returns
 		-------
@@ -190,7 +194,7 @@ class DatanodeHandlerVoltagePoint(DatanodeHandler):
 		
 		hits = []
 		for EUDAQ_run_dn in EUDAQ_runs:
-			_ = EUDAQ_run_dn.load_hits_on_DUT(DUT_name = DUT_name_as_it_is_in_raw_files)
+			_ = EUDAQ_run_dn.load_hits_on_DUT(DUT_name = DUT_name_as_it_is_in_raw_files, max_chi2ndof=max_chi2ndof)
 			_ = pandas.concat({int(EUDAQ_run_dn.datanode_name.split('_')[0].replace('run','')): _}, names=['EUDAQ_run'])
 			hits.append(_)
 		hits = pandas.concat(hits)
