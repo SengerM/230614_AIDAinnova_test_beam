@@ -33,7 +33,8 @@ with open('tracks_data.csv', 'w') as csv_file:
 				)
 				print(','.join([str(data[_]) for _ in CSV_COLUMNS.split(',')]), file=csv_file)
 			if n_event % 99 == 0:
-				print(f'{n_event} events processed', end='\b'*9999)
+				msg = f'{n_event} events processed'
+				print(msg, end='\b'*len(msg))
 		print(f'{n_event} events processed')
 	except TypeError as e:
 		if "'TObject' object is not iterable" in repr(e):
