@@ -324,6 +324,54 @@ def corry_intersect_tracks_with_planes(EUDAQ_run_dn:DatanodeHandler, corry_conta
 		result.check_returncode()
 		logging.info(f'Tracks intersections with planes completed on {EUDAQ_run_dn.pseudopath} ✅')
 
+def extract_tracks_parameters_from_ROOT_to_nice_peoples_format(EUDAQ_run_dn:DatanodeHandler, corry_container_id:str, force:bool=False, silent_corry:bool=False):
+	TEMPLATE_FILES_DIRECTORY = Path(__file__).parent.resolve()/Path('corry_templates/extract_tracks_parameters_from_ROOT_to_nice_peoples_format')
+	
+	TASK_NAME = 'extract_tracks_parameters_from_ROOT_to_nice_peoples_format'
+	
+	if force==False and EUDAQ_run_dn.was_task_run_successfully(TASK_NAME):
+		return
+	
+	with EUDAQ_run_dn.handle_task(
+		TASK_NAME,
+		check_datanode_class = 'EUDAQ_run',
+		check_required_tasks = {'corry_reconstruct_tracks'},
+	) as task_handler:
+		arguments_for_config_files = {
+			'tell_corry_docker_to_run_this.sh': dict(
+				WORKING_DIRECTORY = str(utils.get_datanode_directory_within_corry_docker(EUDAQ_run_dn)/task_handler.task_name),
+			),
+			'root2csv.py': dict(
+				PATH_TO_TRACKSdotROOT_FILE = f"'../corry_reconstruct_tracks/corry_output/tracks.root'",
+			),
+		}
+		
+		for fname in arguments_for_config_files:
+			replace_arguments_in_file_template(
+				file_template = TEMPLATE_FILES_DIRECTORY/f'{fname}.template',
+				output_file = task_handler.path_to_directory_of_my_task/fname,
+				arguments = arguments_for_config_files[fname],
+			)
+		
+		# Make the scripts executable for docker:
+		for fname in arguments_for_config_files:
+			subprocess.run(['chmod','+x',str(task_handler.path_to_directory_of_my_task/fname)])
+		
+		logging.info(f'Extracting tracks data from ROOT to CSV in {EUDAQ_run_dn.pseudopath}...')
+		result = utils.run_commands_in_docker_container(
+			command = str(utils.get_datanode_directory_within_corry_docker(EUDAQ_run_dn)/task_handler.task_name/'tell_corry_docker_to_run_this.sh'),
+			container_id = corry_container_id,
+			stdout = subprocess.DEVNULL if silent_corry == True else None,
+			stderr = subprocess.STDOUT if silent_corry == True else None,
+		)
+		result.check_returncode()
+		logging.info(f'Converting CSV file into SQLite fiel in {EUDAQ_run_dn.pseudopath}...')
+		with SQLiteDataFrameDumper(task_handler.path_to_directory_of_my_task/'tracks_data.sqlite', dump_after_n_appends=1e3) as tracks_dumper:
+			for df in pandas.read_csv(task_handler.path_to_directory_of_my_task/'tracks_data.csv', chunksize=1111, index_col=['n_event','n_track']):
+				tracks_dumper.append(df)
+		(task_handler.path_to_directory_of_my_task/'tracks_data.csv').unlink() # Delete the now-useless CSV file.
+	logging.info(f'Tracks data successfully extracted from ugly ROOT to easy SQLite file {EUDAQ_run_dn.pseudopath} ✅')
+
 def convert_tracks_root_file_to_easy_SQLite(EUDAQ_run_dn:DatanodeHandler, force:bool=False):
 	TASK_NAME = 'convert_tracks_root_file_to_easy_SQLite'
 	
@@ -383,6 +431,7 @@ def corry_do_all_steps_in_some_run(EUDAQ_run_dn:DatanodeHandler, corry_container
 	# ~ corry_align_CROC(EUDAQ_run=EUDAQ_run, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	corry_intersect_tracks_with_planes(EUDAQ_run_dn=EUDAQ_run_dn, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 	convert_tracks_root_file_to_easy_SQLite(EUDAQ_run_dn=EUDAQ_run_dn, force=force)
+	extract_tracks_parameters_from_ROOT_to_nice_peoples_format(EUDAQ_run_dn=EUDAQ_run_dn, corry_container_id=corry_container_id, force=force, silent_corry=silent_corry)
 
 if __name__ == '__main__':
 	import sys

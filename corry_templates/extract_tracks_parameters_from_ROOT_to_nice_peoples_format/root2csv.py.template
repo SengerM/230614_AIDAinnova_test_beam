@@ -1,0 +1,42 @@
+"""This file has to be run inside the Jordi's docker corry container"""
+
+import ROOT
+from pathlib import Path
+
+CSV_COLUMNS = 'n_event,n_track,is_fitted,chi2,ndof'
+
+ROOT.gInterpreter.AddIncludePath('/analysis/corryvreckan/src/objects')
+ROOT.gSystem.AddDynamicPath('/analysis/corryvreckan/lib')
+
+ROOT.gSystem.Load('libCorryvreckanObjects.so')
+
+TrackClass = ROOT.corryvreckan.Track # StraightLineTrack
+
+track = ROOT.std.vector(TrackClass)()
+
+f = ROOT.TFile.Open(ASD(PATH_TO_TRACKSdotROOT_FILE)DSA)
+tree = f.Get('Track')
+
+# Since this will run inside the docker, I cannot be way too pretentious, so I save as a CSV and afterwards outside the docker I convert into a better format, like SQLite.
+with open('tracks_data.csv', 'w') as csv_file:
+	print(CSV_COLUMNS, file=csv_file)
+	try:
+		for n_event,event in enumerate(tree):
+			current_track_vector = getattr(event,'global')
+			for n_track, track in enumerate(current_track_vector):
+				data = dict(
+					n_event = n_event,
+					n_track = n_track,
+					is_fitted = track.isFitted(),
+					chi2 = track.getChi2(),
+					ndof = track.getNdof(),
+				)
+				print(','.join([str(data[_]) for _ in CSV_COLUMNS.split(',')]), file=csv_file)
+			if n_event % 99 == 0:
+				print(f'{n_event} events processed', end='\b'*9999)
+		print(f'{n_event} events processed')
+	except TypeError as e:
+		if "'TObject' object is not iterable" in repr(e):
+			raise TypeError(f'{e} (NOTE: In the past, this happened to me when Corry failed to reconstruct the tracks and produced an empty ROOT file, check the previous step.)')
+		else:
+			raise e

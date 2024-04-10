@@ -1,0 +1,7 @@
+#!/bin/bash
+
+set -e
+
+cd ASD(WORKING_DIRECTORY)DSA &&
+
+python3 root2csv.py
